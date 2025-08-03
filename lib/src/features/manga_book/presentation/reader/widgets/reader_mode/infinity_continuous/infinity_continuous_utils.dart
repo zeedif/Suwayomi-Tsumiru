@@ -243,4 +243,66 @@ class InfinityContinuousUtils {
 
     return completedChapters;
   }
+
+  /// Check if scroll position is stable (not in the middle of a transition)
+  static bool isScrollPositionStable(
+    List<ItemPosition> positions,
+    double stabilityThreshold,
+  ) {
+    if (positions.isEmpty) return false;
+
+    // Check if any items are in transition (partially visible at edges)
+    for (final position in positions) {
+      // If an item is partially cut off at the top or bottom with low visibility,
+      // it might indicate the scroll is in transition
+      if ((position.itemLeadingEdge < 0.0 && position.itemLeadingEdge > -0.5) ||
+          (position.itemTrailingEdge > 1.0 &&
+              position.itemTrailingEdge < 1.5)) {
+        final visibleArea = calculateVisibleArea(position);
+        if (visibleArea < stabilityThreshold) {
+          return false;
+        }
+      }
+    }
+
+    return true;
+  }
+
+  /// Get the most stable reference item for scroll restoration
+  static ItemPosition? getMostStableReferenceItem(
+      List<ItemPosition> positions) {
+    if (positions.isEmpty) return null;
+
+    // Sort by stability score (higher is better)
+    final sortedPositions = positions.toList()
+      ..sort((a, b) {
+        final aScore = _calculateStabilityScore(a);
+        final bScore = _calculateStabilityScore(b);
+        return bScore.compareTo(aScore);
+      });
+
+    return sortedPositions.first;
+  }
+
+  /// Calculate stability score for an item position
+  static double _calculateStabilityScore(ItemPosition position) {
+    final visibleArea = calculateVisibleArea(position);
+
+    // Prefer items that are fully visible
+    if (position.itemLeadingEdge >= 0.0 && position.itemTrailingEdge <= 1.0) {
+      return visibleArea + 1.0; // Bonus for full visibility
+    }
+
+    // Prefer items that span the viewport (more stable reference)
+    if (position.itemLeadingEdge <= 0.0 && position.itemTrailingEdge >= 1.0) {
+      return visibleArea + 0.5; // Bonus for spanning viewport
+    }
+
+    // Items at the top edge are more stable than bottom edge
+    if (position.itemLeadingEdge <= 0.0 && position.itemTrailingEdge > 0.0) {
+      return visibleArea + 0.3; // Small bonus for top edge
+    }
+
+    return visibleArea;
+  }
 }

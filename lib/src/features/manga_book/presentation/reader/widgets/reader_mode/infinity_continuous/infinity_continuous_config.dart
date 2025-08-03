@@ -28,6 +28,16 @@ class InfinityContinuousConfig {
   /// Feedback cooldown to prevent spam
   static const Duration feedbackCooldown = Duration(seconds: 3);
 
+  /// Scroll restoration timing controls
+  static const Duration scrollRestorationDelay = Duration(milliseconds: 16);
+  static const Duration scrollRestorationFallbackDelay =
+      Duration(milliseconds: 50);
+  static const Duration scrollRestorationTimeout = Duration(milliseconds: 200);
+
+  /// Scroll position calculation precision
+  static const double scrollAlignmentPrecision = 0.001;
+  static const double scrollPositionTolerance = 0.1;
+
   /// Navigation threshold for determining when to move to next/previous item
   static const double navigationTrailingThreshold = 0.8;
   static const double navigationLeadingThreshold = 0.2;

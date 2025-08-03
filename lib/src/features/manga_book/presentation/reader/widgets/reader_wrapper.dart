@@ -457,7 +457,8 @@ class ReaderWrapper extends HookConsumerWidget {
                         Expanded(
                           child: PageNumberSlider(
                             currentValue: currentIndex,
-                            maxValue: totalPageCount ?? chapterPages.chapter.pageCount,
+                            maxValue: totalPageCount ??
+                                chapterPages.chapter.pageCount,
                             onChanged: (index) => onChanged(index),
                             inverted: invertTap,
                           ),

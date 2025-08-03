@@ -379,23 +379,26 @@ class InfinityContinuousReaderMode extends HookConsumerWidget {
             // Custom overscroll detection based on Stack Overflow solution
             // https://stackoverflow.com/questions/67091643/check-for-overscroll-in-pageview-flutter
             if (notification is ScrollUpdateNotification) {
-              _handleCustomOverscroll(
-                notification,
-                ref,
-                context,
-                nextPrevChapterPair.value,
-                loadedChapters,
-                loadingNext,
-                loadingPrevious,
-                hasReachedEnd,
-                hasReachedStart,
-                lastEndFeedbackTime,
-                lastStartFeedbackTime,
-                lastEndScrollTime,
-                lastStartScrollTime,
-                scrollController,
-                positionsListener,
-              );
+              // Debounce scroll handling to prevent rapid-fire events during chapter loading
+              if (!loadingNext.value && !loadingPrevious.value) {
+                _handleCustomOverscroll(
+                  notification,
+                  ref,
+                  context,
+                  nextPrevChapterPair.value,
+                  loadedChapters,
+                  loadingNext,
+                  loadingPrevious,
+                  hasReachedEnd,
+                  hasReachedStart,
+                  lastEndFeedbackTime,
+                  lastStartFeedbackTime,
+                  lastEndScrollTime,
+                  lastStartScrollTime,
+                  scrollController,
+                  positionsListener,
+                );
+              }
             }
             return false;
           },
@@ -541,15 +544,29 @@ class InfinityContinuousReaderMode extends HookConsumerWidget {
     final tryingToScrollUp =
         notification.scrollDelta != null && notification.scrollDelta! < 0;
 
-    // Stack Overflow approach: Detect overscroll using scroll metrics
-    // Check if we've exceeded scroll bounds or are at edge trying to scroll further
-    final overscrollEnd = metrics.pixels > metrics.maxScrollExtent ||
-        (metrics.atEdge && lastVisibleIndex >= maxIndex && tryingToScrollDown);
+    // Enhanced overscroll detection with better stability
+    // Use more conservative thresholds to prevent false triggers during chapter loading
+    final scrollDelta = notification.scrollDelta ?? 0.0;
+    final isSignificantScroll =
+        scrollDelta.abs() > 2.0; // Ignore tiny scroll movements
+
+    final overscrollEnd = (metrics.pixels >
+            metrics.maxScrollExtent +
+                InfinityContinuousConfig.scrollExtentTolerance) ||
+        (metrics.atEdge &&
+            lastVisibleIndex >= maxIndex &&
+            tryingToScrollDown &&
+            isSignificantScroll);
     final atMaxScrollExtent = (metrics.pixels - metrics.maxScrollExtent).abs() <
         InfinityContinuousConfig.scrollExtentTolerance;
 
-    final overscrollStart = metrics.pixels < metrics.minScrollExtent ||
-        (metrics.atEdge && firstVisibleIndex <= 0 && tryingToScrollUp);
+    final overscrollStart = (metrics.pixels <
+            metrics.minScrollExtent -
+                InfinityContinuousConfig.scrollExtentTolerance) ||
+        (metrics.atEdge &&
+            firstVisibleIndex <= 0 &&
+            tryingToScrollUp &&
+            isSignificantScroll);
     final atMinScrollExtent = (metrics.pixels - metrics.minScrollExtent).abs() <
         InfinityContinuousConfig.scrollExtentTolerance;
 
@@ -578,6 +595,7 @@ class InfinityContinuousReaderMode extends HookConsumerWidget {
     }
 
     // Trigger previous chapter loading on overscroll at start
+    // Add additional stability check to prevent loading during scroll transitions
     if ((overscrollStart ||
             (atMinScrollExtent &&
                 tryingToScrollUp &&
@@ -587,19 +605,27 @@ class InfinityContinuousReaderMode extends HookConsumerWidget {
         nextPrevChapterPair?.second != null) {
       if (lastStartScrollTime.value == null ||
           now.difference(lastStartScrollTime.value!) > scrollCooldown) {
-        final previousChapter = nextPrevChapterPair!.second!;
+        // Additional stability check: ensure we're not in the middle of a scroll transition
+        final positions = positionsListener.itemPositions.value.toList();
+        final isStable = positions.isEmpty ||
+            InfinityContinuousUtils.isScrollPositionStable(
+                positions, InfinityContinuousConfig.minVisibleAreaThreshold);
 
-        lastStartScrollTime.value = now;
-        InfinityContinuousChapterLoader.loadPreviousChapter(
-          ref,
-          previousChapter,
-          loadedChapters,
-          loadingPrevious,
-          hasReachedStart,
-          scrollController,
-          positionsListener,
-          context,
-        );
+        if (isStable) {
+          final previousChapter = nextPrevChapterPair!.second!;
+
+          lastStartScrollTime.value = now;
+          InfinityContinuousChapterLoader.loadPreviousChapter(
+            ref,
+            previousChapter,
+            loadedChapters,
+            loadingPrevious,
+            hasReachedStart,
+            scrollController,
+            positionsListener,
+            context,
+          );
+        }
       }
     }
 

@@ -28,7 +28,8 @@ class ReaderInfinityScrollingModeTile extends HookConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final infinityScrollingMode = ref.watch(infinityScrollingModeEnabledProvider);
+    final infinityScrollingMode =
+        ref.watch(infinityScrollingModeEnabledProvider);
     final readerMode = ref.watch(readerModeKeyProvider);
 
     // Only show this setting for webtoon mode
