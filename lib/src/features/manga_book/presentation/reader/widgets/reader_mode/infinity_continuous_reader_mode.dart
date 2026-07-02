@@ -11,7 +11,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
-import 'package:zoom_view/zoom_view.dart';
 
 import '../../../../../../utils/extensions/custom_extensions.dart';
 import '../../../../../../utils/misc/app_utils.dart';
@@ -20,6 +19,8 @@ import '../../../../../../widgets/zoom/scroll_offset_to_scroll_controller.dart';
 import '../../../../../settings/presentation/reader/widgets/reader_infinity_scrolling_mode_tile/reader_infinity_scrolling_mode_tile.dart';
 import '../../../../../settings/presentation/reader/widgets/reader_pinch_to_zoom/reader_pinch_to_zoom.dart';
 import '../../../../../settings/presentation/reader/widgets/reader_scroll_animation_tile/reader_scroll_animation_tile.dart';
+import '../../../../../settings/presentation/reader/widgets/reader_webtoon_prefs/reader_webtoon_prefs.dart';
+import '../../../../../settings/presentation/reader/widgets/reader_zoom_toggles/reader_zoom_toggles.dart';
 import '../../../../domain/chapter/chapter_model.dart';
 import '../../../../domain/chapter_page/chapter_page_model.dart';
 import '../../../../domain/manga/manga_model.dart';
@@ -28,6 +29,7 @@ import 'infinity_continuous/infinity_continuous_config.dart';
 import 'infinity_continuous/infinity_continuous_navigation.dart';
 import 'infinity_continuous/infinity_continuous_utils.dart';
 import 'infinity_continuous/multichapter_continuous_reader_mode.dart';
+import 'reader_zoom_view.dart';
 
 /// Continuous reader mode entry point.
 ///
@@ -132,9 +134,13 @@ class InfinityContinuousReaderMode extends HookConsumerWidget {
     }, [currentIndex.value]);
 
     final bool isAnimationEnabled =
-        ref.read(readerScrollAnimationProvider).ifNull(true);
+        ref.watch(readerScrollAnimationProvider).ifNull(true);
     final bool isPinchToZoomEnabled =
-        ref.read(pinchToZoomProvider).ifNull(true);
+        ref.watch(pinchToZoomProvider).ifNull(true);
+    final bool isDoubleTapZoomEnabled =
+        ref.watch(doubleTapToZoomProvider).ifNull(true);
+    final bool isZoomOutDisabled = ref.watch(disableZoomOutProvider).ifNull();
+    final bool cropBorders = ref.watch(cropBordersWebtoonProvider).ifNull();
 
     return ReaderWrapper(
       scrollDirection: scrollDirection,
@@ -162,13 +168,15 @@ class InfinityContinuousReaderMode extends HookConsumerWidget {
       child: AppUtils.wrapOn(
         !kIsWeb &&
                 (Platform.isAndroid || Platform.isIOS) &&
-                isPinchToZoomEnabled
-            ? (Widget child) => ZoomView(
+                (isPinchToZoomEnabled || isDoubleTapZoomEnabled)
+            ? (Widget child) => ReaderZoomView(
                   controller: zoomScrollController,
                   scrollAxis: scrollDirection,
                   maxScale: InfinityContinuousConfig.maxZoomScale,
-                  doubleTapDrag: true,
-                  forceHoldOnPointerDown: true,
+                  // Webtoon min zoom-out rate is 0.5 unless disabled.
+                  minScale: isZoomOutDisabled ? 1 : 0.5,
+                  pinchEnabled: isPinchToZoomEnabled,
+                  doubleTapToZoom: isDoubleTapZoomEnabled,
                   child: child,
                 )
             : null,
@@ -189,20 +197,20 @@ class InfinityContinuousReaderMode extends HookConsumerWidget {
                   InfinityContinuousConfig.horizontalCacheMultiplier,
           separatorBuilder: (_, __) => const SizedBox.shrink(),
           itemBuilder: (BuildContext context, int index) {
-            return _buildPageItem(context, index);
+            return _buildPageItem(context, index, cropBorders);
           },
         ),
       ),
     );
   }
 
-  Widget _buildPageItem(BuildContext context, int index) {
+  Widget _buildPageItem(BuildContext context, int index, bool cropBorders) {
     return ServerImage(
       showReloadButton: true,
-      fit: scrollDirection == Axis.vertical
-          ? BoxFit.fitWidth
-          : BoxFit.fitHeight,
+      fit:
+          scrollDirection == Axis.vertical ? BoxFit.fitWidth : BoxFit.fitHeight,
       appendApiToUrl: false,
+      cropBorders: cropBorders,
       imageUrl: chapterPages.pages[index],
       progressIndicatorBuilder: (_, __, downloadProgress) => Center(
         child: CircularProgressIndicator(value: downloadProgress.progress),

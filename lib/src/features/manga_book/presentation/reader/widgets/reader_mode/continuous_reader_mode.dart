@@ -13,21 +13,25 @@ import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:gap/gap.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
-import 'package:zoom_view/zoom_view.dart';
 
+import '../../../../../../constants/enum.dart';
 import '../../../../../../utils/extensions/custom_extensions.dart';
 import '../../../../../../utils/misc/app_utils.dart';
 import '../../../../../../widgets/server_image.dart';
 import '../../../../../../widgets/zoom/scroll_offset_to_scroll_controller.dart';
+import '../../../../../settings/presentation/reader/widgets/reader_general_prefs/reader_general_prefs.dart';
 import '../../../../../settings/presentation/reader/widgets/reader_infinity_scrolling_mode_tile/reader_infinity_scrolling_mode_tile.dart';
+import '../../../../../settings/presentation/reader/widgets/reader_paged_prefs/reader_paged_prefs.dart';
 import '../../../../../settings/presentation/reader/widgets/reader_pinch_to_zoom/reader_pinch_to_zoom.dart';
-import '../../../../../settings/presentation/reader/widgets/reader_scroll_animation_tile/reader_scroll_animation_tile.dart';
+import '../../../../../settings/presentation/reader/widgets/reader_webtoon_prefs/reader_webtoon_prefs.dart';
+import '../../../../../settings/presentation/reader/widgets/reader_zoom_toggles/reader_zoom_toggles.dart';
 import '../../../../domain/chapter/chapter_model.dart';
 import '../../../../domain/chapter_page/chapter_page_model.dart';
 import '../../../../domain/manga/manga_model.dart';
 import '../chapter_separator.dart';
 import '../reader_wrapper.dart';
 import 'infinity_continuous_reader_mode.dart';
+import 'reader_zoom_view.dart';
 
 /// Configuration constants for improved scroll behavior
 class _ScrollConfig {
@@ -169,10 +173,29 @@ class ContinuousReaderMode extends HookConsumerWidget {
       return null;
     }, [currentIndex.value]); // Only watch currentIndex changes
 
+    // "Animate page transitions": animate next/prev when ON, else jump.
     final bool isAnimationEnabled =
-        ref.read(readerScrollAnimationProvider).ifNull(true);
+        ref.watch(animatePageTransitionsProvider).ifNull(true);
     final bool isPinchToZoomEnabled =
-        ref.read(pinchToZoomProvider).ifNull(true);
+        ref.watch(pinchToZoomProvider).ifNull(true);
+    final bool isDoubleTapZoomEnabled =
+        ref.watch(doubleTapToZoomProvider).ifNull(true);
+    final bool isZoomOutDisabled = ref.watch(disableZoomOutProvider).ifNull();
+
+    // "Always show chapter transition": ON keeps the full prev/next
+    // transition separator; OFF minimizes it.
+    final bool alwaysShowTransition =
+        ref.watch(alwaysShowChapterTransitionProvider).ifNull(true);
+
+    // Long-strip smart scale: cap the strip width on wide/landscape screens
+    // (vertical only). Render-only.
+    final WebtoonScaleType scaleType =
+        ref.watch(webtoonScaleTypeKeyProvider) ?? WebtoonScaleType.fitScreen;
+    final double maxContentWidth = scrollDirection == Axis.vertical
+        ? scaleType.maxContentWidth(context.width, context.height)
+        : context.width;
+    // Auto-crop solid borders in the long-strip.
+    final bool cropBorders = ref.watch(cropBordersWebtoonProvider).ifNull();
 
     return ReaderWrapper(
       scrollDirection: scrollDirection,
@@ -219,16 +242,15 @@ class ContinuousReaderMode extends HookConsumerWidget {
       child: AppUtils.wrapOn(
         !kIsWeb &&
                 (Platform.isAndroid || Platform.isIOS) &&
-                isPinchToZoomEnabled
-            ? (Widget child) => ZoomView(
+                (isPinchToZoomEnabled || isDoubleTapZoomEnabled)
+            ? (Widget child) => ReaderZoomView(
                   controller: zoomScrollController,
                   scrollAxis: scrollDirection,
                   maxScale: 5,
-                  doubleTapDrag: true,
-                  // Required so the scale recognizer wins the gesture
-                  // arena against the underlying scrollable's drag
-                  // recognizer (closes #256).
-                  forceHoldOnPointerDown: true,
+                  // Webtoon min zoom-out rate is 0.5 unless disabled.
+                  minScale: isZoomOutDisabled ? 1 : 0.5,
+                  pinchEnabled: isPinchToZoomEnabled,
+                  doubleTapToZoom: isDoubleTapZoomEnabled,
                   child: child,
                 )
             : null,
@@ -248,12 +270,13 @@ class ContinuousReaderMode extends HookConsumerWidget {
           separatorBuilder: (BuildContext context, int index) =>
               showSeparator ? const Gap(16) : const SizedBox.shrink(),
           itemBuilder: (BuildContext context, int index) {
-            final Widget image = ServerImage(
+            Widget image = ServerImage(
               showReloadButton: true,
               fit: scrollDirection == Axis.vertical
                   ? BoxFit.fitWidth
                   : BoxFit.fitHeight,
               appendApiToUrl: false,
+              cropBorders: cropBorders,
               imageUrl: chapterPages.pages[index],
               progressIndicatorBuilder: (_, __, downloadProgress) => Center(
                 child: CircularProgressIndicator(
@@ -271,6 +294,17 @@ class ContinuousReaderMode extends HookConsumerWidget {
               ),
             );
 
+            // Smart-scale: centre the narrower strip on wide screens.
+            if (scrollDirection == Axis.vertical &&
+                maxContentWidth < context.width) {
+              image = Center(
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(maxWidth: maxContentWidth),
+                  child: image,
+                ),
+              );
+            }
+
             if (index == 0 || index == chapterPages.chapter.pageCount - 1) {
               final bool reverseDirection =
                   scrollDirection == Axis.horizontal && reverse;
@@ -282,6 +316,7 @@ class ContinuousReaderMode extends HookConsumerWidget {
                   manga: manga,
                   chapter: chapter,
                   isPreviousChapterSeparator: (index == 0),
+                  alwaysShow: alwaysShowTransition,
                 ),
               );
               return Flex(

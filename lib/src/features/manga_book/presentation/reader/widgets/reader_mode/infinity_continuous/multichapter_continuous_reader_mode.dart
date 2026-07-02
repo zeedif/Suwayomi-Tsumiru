@@ -12,7 +12,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
-import 'package:zoom_view/zoom_view.dart';
 
 import '../../../../../../../utils/extensions/custom_extensions.dart';
 import '../../../../../../../utils/misc/app_utils.dart';
@@ -25,6 +24,8 @@ import '../../../../../../settings/presentation/incognito/incognito_mode.dart';
 import '../../../../../../settings/presentation/reader/widgets/reader_feedback_toasts_tile/reader_feedback_toasts_tile.dart';
 import '../../../../../../settings/presentation/reader/widgets/reader_pinch_to_zoom/reader_pinch_to_zoom.dart';
 import '../../../../../../settings/presentation/reader/widgets/reader_scroll_animation_tile/reader_scroll_animation_tile.dart';
+import '../../../../../../settings/presentation/reader/widgets/reader_webtoon_prefs/reader_webtoon_prefs.dart';
+import '../../../../../../settings/presentation/reader/widgets/reader_zoom_toggles/reader_zoom_toggles.dart';
 import '../../../../../../tracking/domain/track_progress_gate.dart';
 import '../../../../../domain/chapter/chapter_model.dart';
 import '../../../../../domain/chapter_page/chapter_page_model.dart';
@@ -32,6 +33,7 @@ import '../../../../../domain/manga/manga_model.dart';
 import '../../../../manga_details/controller/manga_details_controller.dart';
 import '../../../controller/reader_controller.dart';
 import '../../reader_wrapper.dart';
+import '../reader_zoom_view.dart';
 import 'infinity_continuous_config.dart';
 import 'infinity_continuous_feedback.dart';
 import 'infinity_continuous_utils.dart';
@@ -123,7 +125,7 @@ class MultiChapterContinuousReaderMode extends HookConsumerWidget {
     // settling. The position listener otherwise reads its transient positions
     // as a user scroll and can auto-load a neighbour chapter mid-seek — which
     // shifts every index and bounces the landing (the single-tap seek bug).
-    // Mangayomi guards its progress listener the same way (_isAdjustingScroll).
+    // The isAdjustingScroll flag below (+ adjustIdleTimer) is that guard.
     final isAdjustingScroll = useRef<bool>(false);
     final adjustIdleTimer = useRef<Timer?>(null);
 
@@ -212,12 +214,12 @@ class MultiChapterContinuousReaderMode extends HookConsumerWidget {
       );
       if (completed && !completedChapterIds.value.contains(chapterId)) {
         completedChapterIds.value = {...completedChapterIds.value, chapterId};
-        unawaited(maybeTrackProgressOnReadFetch(
-            ref, mangaId: manga.id, isRead: true, manual: false));
-        unawaited(maybeDeleteOnReadLocal(
-            ref, mangaId: manga.id, readChapterId: chapterId));
-        unawaited(maybeDeleteOnReadServer(
-            ref, mangaId: manga.id, readChapterId: chapterId));
+        unawaited(maybeTrackProgressOnReadFetch(ref,
+            mangaId: manga.id, isRead: true, manual: false));
+        unawaited(maybeDeleteOnReadLocal(ref,
+            mangaId: manga.id, readChapterId: chapterId));
+        unawaited(maybeDeleteOnReadServer(ref,
+            mangaId: manga.id, readChapterId: chapterId));
       }
       ref.invalidate(readingHistoryProvider);
     }
@@ -278,12 +280,20 @@ class MultiChapterContinuousReaderMode extends HookConsumerWidget {
     }, const []);
 
     final bool isAnimationEnabled =
-        ref.read(readerScrollAnimationProvider).ifNull(true);
+        ref.watch(readerScrollAnimationProvider).ifNull(true);
     final bool isPinchToZoomEnabled =
-        ref.read(pinchToZoomProvider).ifNull(true);
+        ref.watch(pinchToZoomProvider).ifNull(true);
+    final bool isDoubleTapZoomEnabled =
+        ref.watch(doubleTapToZoomProvider).ifNull(true);
+    final bool isZoomOutDisabled = ref.watch(disableZoomOutProvider).ifNull();
+    // Auto-crop borders. Render-only: the crop
+    // provider's async decode is handled by the imageBuilder's frameBuilder
+    // below, which still reserves placeholderHeight and measures the cropped
+    // strip — the scroll/height math is untouched.
+    final bool cropBorders = ref.watch(cropBordersWebtoonProvider).ifNull();
 
     // Decode a page's image off-screen AND record its true rendered height from
-    // the decoded aspect ratio (Mihon/Mangayomi technique). Caching the height
+    // the decoded aspect ratio. Caching the height
     // is the load-bearing part: a page then ALWAYS lays out at its real height —
     // even before its widget is built, and even if its bitmap was later evicted
     // — so it never resizes on landing/scroll-in and never shoves the viewport.
@@ -306,8 +316,7 @@ class MultiChapterContinuousReaderMode extends HookConsumerWidget {
       final h = info.image.height;
       if (w > 0 && h > 0 && context.mounted) {
         // Rendered height for a fitWidth strip spanning the viewport width.
-        pageHeights.value[url] =
-            MediaQuery.sizeOf(context).width * h / w;
+        pageHeights.value[url] = MediaQuery.sizeOf(context).width * h / w;
       }
       info.dispose();
     }
@@ -624,8 +633,8 @@ class MultiChapterContinuousReaderMode extends HookConsumerWidget {
       if (globalIndex < 0) return;
       if (!itemScrollController.isAttached) return;
       currentChapterPageIndex.value = chapterIdx;
-      // Jump IMMEDIATELY (Mangayomi parity: services/page_navigation_service.dart
-      // jumpToPage -> itemScrollController.jumpTo(index:), no await). The old
+      // Jump IMMEDIATELY — itemScrollController.jumpTo(index:), no await, so the
+      // landing is instant instead of deferred. The old
       // path awaited ~10 sequential off-screen image decodes BEFORE jumping —
       // a multi-second window (2.4s on-device, worse under download load) in
       // which the position listener auto-loaded a neighbour chapter and shifted
@@ -695,6 +704,7 @@ class MultiChapterContinuousReaderMode extends HookConsumerWidget {
         showReloadButton: true,
         fit: BoxFit.fitWidth,
         appendApiToUrl: false,
+        cropBorders: cropBorders,
         imageUrl: loc.imageUrl,
         progressIndicatorBuilder: (_, __, progress) => SizedBox(
           height: placeholderHeight,
@@ -726,7 +736,8 @@ class MultiChapterContinuousReaderMode extends HookConsumerWidget {
           // keeps every page size-stable, so jumpTo(index) lands true.
           frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
             if (frame == null && !wasSynchronouslyLoaded) {
-              return SizedBox(height: placeholderHeight, width: double.infinity);
+              return SizedBox(
+                  height: placeholderHeight, width: double.infinity);
             }
             // Only measure the REAL decoded image — never the placeholder — so a
             // strip re-entering the viewport reserves its true height.
@@ -774,13 +785,17 @@ class MultiChapterContinuousReaderMode extends HookConsumerWidget {
     );
 
     final child = AppUtils.wrapOn(
-      !kIsWeb && (Platform.isAndroid || Platform.isIOS) && isPinchToZoomEnabled
-          ? (Widget child) => ZoomView(
+      !kIsWeb &&
+              (Platform.isAndroid || Platform.isIOS) &&
+              (isPinchToZoomEnabled || isDoubleTapZoomEnabled)
+          ? (Widget child) => ReaderZoomView(
                 controller: zoomScrollController,
                 scrollAxis: scrollDirection,
                 maxScale: InfinityContinuousConfig.maxZoomScale,
-                doubleTapDrag: true,
-                forceHoldOnPointerDown: true,
+                // Webtoon min zoom-out rate is 0.5 unless disabled.
+                minScale: isZoomOutDisabled ? 1 : 0.5,
+                pinchEnabled: isPinchToZoomEnabled,
+                doubleTapToZoom: isDoubleTapZoomEnabled,
                 child: child,
               )
           : null,

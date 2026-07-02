@@ -13,12 +13,27 @@ class LShapedLayout extends StatelessWidget {
     this.onRightTap,
     this.leftColor,
     this.rightColor,
+    this.onTopTap,
+    this.onBottomTap,
+    this.topColor,
+    this.bottomColor,
+    this.smaller = false,
   });
 
   final VoidCallback? onLeftTap;
   final VoidCallback? onRightTap;
   final Color? leftColor;
   final Color? rightColor;
+
+  // Vertical-axis zones (top/bottom rows); fall back to the horizontal
+  // assignments so callers without axis-wise invert keep the old behavior.
+  final VoidCallback? onTopTap;
+  final VoidCallback? onBottomTap;
+  final Color? topColor;
+  final Color? bottomColor;
+
+  /// "Smaller tap zones": prev/next bands 0.25 (flex 1:2:1) vs 0.33.
+  final bool smaller;
   @override
   Widget build(BuildContext context) {
     return Column(
@@ -26,11 +41,12 @@ class LShapedLayout extends StatelessWidget {
         Expanded(
           child: GestureDetector(
             behavior: HitTestBehavior.translucent,
-            onTap: onLeftTap,
-            child: Container(color: leftColor),
+            onTap: onTopTap ?? onLeftTap,
+            child: Container(color: topColor ?? leftColor),
           ),
         ),
         Expanded(
+          flex: smaller ? 2 : 1,
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
@@ -41,7 +57,7 @@ class LShapedLayout extends StatelessWidget {
                   child: Container(color: leftColor),
                 ),
               ),
-              const Expanded(child: SizedBox.expand()),
+              Expanded(flex: smaller ? 2 : 1, child: const SizedBox.expand()),
               Expanded(
                 child: GestureDetector(
                   behavior: HitTestBehavior.translucent,
@@ -55,8 +71,8 @@ class LShapedLayout extends StatelessWidget {
         Expanded(
           child: GestureDetector(
             behavior: HitTestBehavior.translucent,
-            onTap: onRightTap,
-            child: Container(color: rightColor),
+            onTap: onBottomTap ?? onRightTap,
+            child: Container(color: bottomColor ?? rightColor),
           ),
         ),
       ],

@@ -74,6 +74,235 @@ enum ReaderNavigationLayout {
       };
 }
 
+/// Reader rotation lock. defaultRotation
+/// means "leave the platform alone" so existing users see zero change.
+enum ReaderOrientation {
+  defaultRotation,
+  free,
+  portrait,
+  landscape,
+  lockedPortrait,
+  lockedLandscape,
+  reversePortrait;
+
+  String toLocale(BuildContext context) => switch (this) {
+        ReaderOrientation.defaultRotation =>
+          context.l10n.readerOrientationDefault,
+        ReaderOrientation.free => context.l10n.readerOrientationFree,
+        ReaderOrientation.portrait => context.l10n.readerOrientationPortrait,
+        ReaderOrientation.landscape => context.l10n.readerOrientationLandscape,
+        ReaderOrientation.lockedPortrait =>
+          context.l10n.readerOrientationLockedPortrait,
+        ReaderOrientation.lockedLandscape =>
+          context.l10n.readerOrientationLockedLandscape,
+        ReaderOrientation.reversePortrait =>
+          context.l10n.readerOrientationReversePortrait,
+      };
+}
+
+/// 4-value tap-zone inversion. Successor of the
+/// legacy invertTap bool: true→both, false→none; the old key is never rewritten.
+enum TapInvert {
+  none,
+  horizontal,
+  vertical,
+  both;
+
+  static TapInvert fromLegacyInvert(bool? invert) =>
+      invert.ifNull() ? TapInvert.both : TapInvert.none;
+
+  bool get invertsHorizontal =>
+      this == TapInvert.horizontal || this == TapInvert.both;
+  bool get invertsVertical =>
+      this == TapInvert.vertical || this == TapInvert.both;
+
+  String toLocale(BuildContext context) => switch (this) {
+        TapInvert.none => context.l10n.readerTapInvertNone,
+        TapInvert.horizontal => context.l10n.readerTapInvertHorizontal,
+        TapInvert.vertical => context.l10n.readerTapInvertVertical,
+        TapInvert.both => context.l10n.readerTapInvertBoth,
+      };
+}
+
+/// Paged image scale (default fit-screen).
+enum ImageScaleType {
+  fitScreen,
+  stretch,
+  fitWidth,
+  fitHeight,
+  originalSize,
+  smartFit;
+
+  String toLocale(BuildContext context) => switch (this) {
+        ImageScaleType.fitScreen => context.l10n.imageScaleTypeFitScreen,
+        ImageScaleType.stretch => context.l10n.imageScaleTypeStretch,
+        ImageScaleType.fitWidth => context.l10n.imageScaleTypeFitWidth,
+        ImageScaleType.fitHeight => context.l10n.imageScaleTypeFitHeight,
+        ImageScaleType.originalSize => context.l10n.imageScaleTypeOriginalSize,
+        ImageScaleType.smartFit => context.l10n.imageScaleTypeSmartFit,
+      };
+
+  /// Paged page render: the BoxFit + decode-size hint for a page image on a
+  /// [width]×[height] screen. smartFit ≈ fit-width (most manga pages are tall).
+  (BoxFit, Size?) pagedFit(double width, double height) => switch (this) {
+        ImageScaleType.fitScreen => (BoxFit.contain, Size.fromHeight(height)),
+        ImageScaleType.stretch => (BoxFit.fill, Size(width, height)),
+        ImageScaleType.fitWidth => (BoxFit.fitWidth, Size.fromWidth(width)),
+        ImageScaleType.fitHeight => (BoxFit.fitHeight, Size.fromHeight(height)),
+        ImageScaleType.originalSize => (BoxFit.none, null),
+        ImageScaleType.smartFit => (BoxFit.fitWidth, Size.fromWidth(width)),
+      };
+}
+
+/// Paged zoom start position (default automatic).
+enum ZoomStart {
+  automatic,
+  left,
+  right,
+  center;
+
+  String toLocale(BuildContext context) => switch (this) {
+        ZoomStart.automatic => context.l10n.zoomStartAutomatic,
+        ZoomStart.left => context.l10n.zoomStartLeft,
+        ZoomStart.right => context.l10n.zoomStartRight,
+        ZoomStart.center => context.l10n.zoomStartCenter,
+      };
+}
+
+/// Paged single/double-page layout (default automatic).
+enum PageLayout {
+  singlePage,
+  doublePages,
+  automatic;
+
+  String toLocale(BuildContext context) => switch (this) {
+        PageLayout.singlePage => context.l10n.pageLayoutSinglePage,
+        PageLayout.doublePages => context.l10n.pageLayoutDoublePages,
+        PageLayout.automatic => context.l10n.pageLayoutAutomatic,
+      };
+}
+
+/// Foldable dead-space spacer (default none).
+enum CenterMarginType {
+  none,
+  doublePage,
+  widePage,
+  doubleAndWide;
+
+  String toLocale(BuildContext context) => switch (this) {
+        CenterMarginType.none => context.l10n.centerMarginNone,
+        CenterMarginType.doublePage => context.l10n.centerMarginDoublePages,
+        CenterMarginType.widePage => context.l10n.centerMarginWidePages,
+        CenterMarginType.doubleAndWide =>
+          context.l10n.centerMarginDoubleAndWide,
+      };
+}
+
+/// Reader page background. Declaration order matches
+/// the stored ints 0-3; the chip row shows Black/Gray/White/Auto.
+enum ReaderBackgroundColor {
+  white,
+  black,
+  gray,
+  automatic;
+
+  String toLocale(BuildContext context) => switch (this) {
+        ReaderBackgroundColor.white => context.l10n.backgroundColorWhite,
+        ReaderBackgroundColor.black => context.l10n.backgroundColorBlack,
+        ReaderBackgroundColor.gray => context.l10n.backgroundColorGray,
+        ReaderBackgroundColor.automatic => context.l10n.backgroundColorAuto,
+      };
+
+  /// Gray is the literal 0x202125; automatic maps
+  /// (dark theme → gray, light → white).
+  Color color(BuildContext context) => switch (this) {
+        ReaderBackgroundColor.white => Colors.white,
+        ReaderBackgroundColor.black => Colors.black,
+        ReaderBackgroundColor.gray => const Color(0xFF202125),
+        ReaderBackgroundColor.automatic =>
+          Theme.of(context).colorScheme.brightness == Brightness.dark
+              ? const Color(0xFF202125)
+              : Colors.white,
+      };
+}
+
+/// Flash-on-page-change color. whiteBlack = white for the
+/// first half of the flash, black for the second.
+enum FlashColor {
+  black,
+  white,
+  whiteBlack;
+
+  String toLocale(BuildContext context) => switch (this) {
+        FlashColor.black => context.l10n.flashColorBlack,
+        FlashColor.white => context.l10n.flashColorWhite,
+        FlashColor.whiteBlack => context.l10n.flashColorWhiteBlack,
+      };
+}
+
+/// Custom color-filter blend (order 0-5). Native Android
+/// gates the last three behind API level P+; Flutter's BlendMode supports all
+/// six everywhere, so no gate. "Multiply" is Compose Modulate (src×dst).
+enum ColorFilterBlendMode {
+  defaultBlend(BlendMode.srcOver),
+  multiply(BlendMode.modulate),
+  screen(BlendMode.screen),
+  overlay(BlendMode.overlay),
+  lighten(BlendMode.lighten),
+  darken(BlendMode.darken);
+
+  const ColorFilterBlendMode(this.blendMode);
+
+  final BlendMode blendMode;
+
+  String toLocale(BuildContext context) => switch (this) {
+        ColorFilterBlendMode.defaultBlend =>
+          context.l10n.colorFilterModeDefault,
+        ColorFilterBlendMode.multiply => context.l10n.colorFilterModeMultiply,
+        ColorFilterBlendMode.screen => context.l10n.colorFilterModeScreen,
+        ColorFilterBlendMode.overlay => context.l10n.colorFilterModeOverlay,
+        ColorFilterBlendMode.lighten => context.l10n.colorFilterModeLighten,
+        ColorFilterBlendMode.darken => context.l10n.colorFilterModeDarken,
+      };
+}
+
+/// Long-strip smart scale on wide screens.
+enum WebtoonScaleType {
+  fitScreen,
+  ratio4to3,
+  ratio3to2,
+  ratio16to9,
+  ratio20to9;
+
+  String toLocale(BuildContext context) => switch (this) {
+        WebtoonScaleType.fitScreen => context.l10n.webtoonScaleTypeFitScreen,
+        WebtoonScaleType.ratio4to3 => context.l10n.webtoonScaleTypeRatio4to3,
+        WebtoonScaleType.ratio3to2 => context.l10n.webtoonScaleTypeRatio3to2,
+        WebtoonScaleType.ratio16to9 => context.l10n.webtoonScaleTypeRatio16to9,
+        WebtoonScaleType.ratio20to9 => context.l10n.webtoonScaleTypeRatio20to9,
+      };
+
+  /// Target column width/height ratio. FIT = 0 → no cap.
+  double get _ratio => switch (this) {
+        WebtoonScaleType.fitScreen => 0,
+        WebtoonScaleType.ratio4to3 => 3 / 4,
+        WebtoonScaleType.ratio3to2 => 2 / 3,
+        WebtoonScaleType.ratio16to9 => 9 / 16,
+        WebtoonScaleType.ratio20to9 => 9 / 20,
+      };
+
+  /// Max long-strip content width for a [screenWidth]×[screenHeight] viewport.
+  /// Caps the strip to the target aspect only when the screen is wider than
+  /// that column (shrinks iff screenRatio > desiredRatio); otherwise
+  /// full width. Pure/render-only — no scroll math.
+  double maxContentWidth(double screenWidth, double screenHeight) {
+    final ratio = _ratio;
+    if (ratio <= 0) return screenWidth;
+    final desiredWidth = screenHeight * ratio;
+    return desiredWidth < screenWidth ? desiredWidth : screenWidth;
+  }
+}
+
 enum MangaSort {
   alphabetical,
   dateAdded,

@@ -12,20 +12,29 @@ import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
+import '../../../../constants/db_keys.dart';
 import '../../../../constants/enum.dart';
 import '../../../../utils/extensions/custom_extensions.dart';
+import '../../../../utils/misc/toast/toast.dart';
 import '../../../history/presentation/history_controller.dart';
 import '../../../library/presentation/library/controller/library_controller.dart';
 import '../../../library/presentation/library/controller/library_manga_list.dart';
 import '../../../offline/data/offline_download_providers.dart';
+import '../../../settings/presentation/general/widgets/force_portrait_tile.dart';
 import '../../../settings/presentation/incognito/incognito_mode.dart';
+import '../../../settings/presentation/reader/widgets/reader_auto_webtoon_mode/reader_auto_webtoon_mode.dart';
+import '../../../settings/presentation/reader/widgets/reader_general_prefs/reader_general_prefs.dart';
 import '../../../settings/presentation/reader/widgets/reader_ignore_safe_area_tile/reader_ignore_safe_area_tile.dart';
 import '../../../settings/presentation/reader/widgets/reader_keep_screen_on_tile/reader_keep_screen_on_tile.dart';
 import '../../../settings/presentation/reader/widgets/reader_mode_tile/reader_mode_tile.dart';
+import '../../../settings/presentation/reader/widgets/reader_orientation/reader_orientation.dart';
 import '../../../tracking/domain/track_progress_gate.dart';
 import '../../domain/manga/manga_model.dart';
 import '../manga_details/controller/manga_details_controller.dart';
+import 'controller/auto_webtoon.dart';
+import 'controller/display_cutout.dart';
 import 'controller/reader_controller.dart';
+import 'widgets/chrome/reader_chrome.dart';
 import 'widgets/reader_mode/continuous_reader_mode.dart';
 import 'widgets/reader_mode/single_page_reader_mode.dart';
 
@@ -48,6 +57,28 @@ class ReaderScreen extends HookConsumerWidget {
     final chapter = ref.watch(chapterProviderWithIndex);
     final defaultReaderMode = ref.watch(readerModeKeyProvider);
     final ignoreSafeArea = ref.watch(readerIgnoreSafeAreaProvider).ifNull();
+
+    // Auto Webtoon: long-strip series read webtoon THIS session when
+    // their per-series mode is Default; never written to meta.
+    final mangaData = manga.valueOrNull;
+    final autoWebtoon = ref.watch(autoWebtoonModeProvider).ifNull(true) &&
+        mangaData != null &&
+        (mangaData.metaData.readerMode ?? ReaderMode.defaultReader) ==
+            ReaderMode.defaultReader &&
+        detectsWebtoon(
+          genres: mangaData.genre,
+          sourceName: mangaData.source?.name,
+        );
+    final toast = ref.watch(toastProvider);
+    // Resolve the l10n string in build (safe); the effect runs during hook-init
+    // where an inherited-widget lookup (context.l10n) throws _debugIsInitHook.
+    final autoWebtoonSnack = context.l10n.autoWebtoonSnack;
+    useEffect(() {
+      if (autoWebtoon) {
+        toast?.show(autoWebtoonSnack, withMicrotask: true);
+      }
+      return null;
+    }, [autoWebtoon]);
 
     final debounce = useRef<Timer?>(null);
     // Latest page reached, so we can flush it on exit (the debounce below would
@@ -146,12 +177,46 @@ class ReaderScreen extends HookConsumerWidget {
     );
 
     useEffect(() {
-      SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+      // Fullscreen OFF keeps the OS bars for the whole session (read once at
+      // mount; ReaderChrome handles live changes on chrome transitions).
+      final fullscreen = ref.read(readerFullscreenProvider) ??
+          DBKeys.readerFullscreen.initial as bool;
+      SystemChrome.setEnabledSystemUIMode(
+        hiddenChromeUiMode(fullscreen: fullscreen),
+      );
       return () => SystemChrome.setEnabledSystemUIMode(
             SystemUiMode.manual,
             overlays: SystemUiOverlay.values,
           );
     }, []);
+
+    // Draw reader content into the display cutout (notch/punch-hole) when opted
+    // in; restore the default window mode on exit. Android-only native attr.
+    final underCutout = ref.watch(drawUnderCutoutProvider) ??
+        DBKeys.drawUnderCutout.initial as bool;
+    useEffect(() {
+      setDrawUnderCutout(underCutout);
+      return () => setDrawUnderCutout(false);
+    }, [underCutout]);
+
+    // Rotation lock: applied once the per-series ?? global value resolves
+    // (null until the manga loads, Default never touches the platform).
+    // Companion to the immersive effect above — same lifecycle, different
+    // platform surface, so the two can't race.
+    final readerOrientation = mangaData == null
+        ? null
+        : mangaData.metaData.readerOrientation ??
+            ref.watch(readerOrientationKeyProvider) ??
+            ReaderOrientation.defaultRotation;
+    useEffect(() {
+      final lock = readerOrientation?.deviceOrientations;
+      if (lock == null) return null;
+      SystemChrome.setPreferredOrientations(lock);
+      // Restore the app-wide state on exit — that's portrait-locked when the
+      // global "Lock to portrait" toggle is on, fully unlocked otherwise.
+      final forcePortrait = ref.read(forcePortraitProvider).ifNull();
+      return () => applyForcePortrait(forcePortrait);
+    }, [readerOrientation]);
 
     // Keep the screen awake while reading when the user opted in. The cleanup
     // only exists when we actually enabled (returning null when off), so leaving
@@ -208,8 +273,9 @@ class ReaderScreen extends HookConsumerWidget {
                       if (chapterPagesData == null) {
                         return const SizedBox.shrink();
                       }
-                      return switch (
-                          data.metaData.readerMode ?? defaultReaderMode) {
+                      return switch (autoWebtoon
+                          ? ReaderMode.webtoon
+                          : data.metaData.readerMode ?? defaultReaderMode) {
                         ReaderMode.singleVertical => SinglePageReaderMode(
                             chapter: chapterData,
                             manga: data,
