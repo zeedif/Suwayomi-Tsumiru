@@ -41,8 +41,9 @@ Future<void> addMangaToLibraryWithCategory(
   if (match.isNotEmpty) {
     await repo.addMangaToLibrary(mangaId);
     await repo.addMangaToCategory(mangaId, match.first.id);
-  } else if (pref != -1 || categories.isEmpty) {
-    // Default/uncategorized, or no categories to choose from.
+  } else if (pref == 0 || categories.isEmpty) {
+    // Explicit Default/uncategorized, or nothing to pick from. A since-deleted
+    // pref is NOT this branch — it falls through to the picker (matches settings).
     await repo.addMangaToLibrary(mangaId);
   } else {
     if (!context.mounted) return;
