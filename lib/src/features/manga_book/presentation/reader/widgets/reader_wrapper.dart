@@ -61,6 +61,8 @@ class ReaderInputCallbacks {
     required this.navigationLayout,
     required this.tapInvert,
     required this.smallerTapZones,
+    this.hasNextBoundary = _noBoundaryNavigation,
+    this.hasPreviousBoundary = _noBoundaryNavigation,
   });
 
   final VoidCallback onTap;
@@ -75,6 +77,12 @@ class ReaderInputCallbacks {
   final ReaderNavigationLayout navigationLayout;
   final TapInvert tapInvert;
   final bool smallerTapZones;
+
+  /// Whether an adjacent chapter exists to move to — lets the paged viewport
+  /// decide before animating, so it doesn't slide a page fully off-screen only
+  /// to bounce back when there's no chapter there.
+  final bool Function() hasNextBoundary;
+  final bool Function() hasPreviousBoundary;
 }
 
 class ReaderInputScope extends InheritedWidget {
@@ -132,6 +140,7 @@ class ReaderWrapper extends HookConsumerWidget {
     this.isAtLastBoundary,
     this.spreadPageIndexes,
     this.effectiveReaderMode,
+    this.handlesOwnChapterNavigation = false,
   });
   final Widget child;
   final MangaDto manga;
@@ -150,6 +159,12 @@ class ReaderWrapper extends HookConsumerWidget {
   final bool Function()? isAtLastBoundary;
   final List<int>? spreadPageIndexes;
   final ReaderMode? effectiveReaderMode;
+
+  /// When true the child (a multi-chapter host) crosses chapter boundaries
+  /// itself inside one continuous pager, so the reading-flow boundary must NOT
+  /// `pushReplacement` a fresh chapter — it falls through to the child's
+  /// onNext/onPrevious instead.
+  final bool handlesOwnChapterNavigation;
 
   bool _shouldUseVerticalTransition(ReaderMode readerMode) {
     switch (readerMode) {
@@ -415,11 +430,15 @@ class ReaderWrapper extends HookConsumerWidget {
     }
 
     bool tryNextChapter() {
+      // Host owns in-window chapter crossing: don't push a fresh route; let the
+      // reading-flow boundary fall through to the child's controller.
+      if (handlesOwnChapterNavigation) return false;
       if (!canSwipeAcrossChapterBoundary) return false;
       return pushNextChapter();
     }
 
     bool tryPreviousChapter() {
+      if (handlesOwnChapterNavigation) return false;
       if (!canSwipeAcrossChapterBoundary) return false;
       return pushPreviousChapter();
     }
@@ -546,6 +565,12 @@ class ReaderWrapper extends HookConsumerWidget {
                           onPrevious: onReaderPrevious,
                           onNextBoundary: tryNextChapter,
                           onPreviousBoundary: tryPreviousChapter,
+                          hasNextBoundary: () =>
+                              canSwipeAcrossChapterBoundary &&
+                              nextPrevChapterPair?.first != null,
+                          hasPreviousBoundary: () =>
+                              canSwipeAcrossChapterBoundary &&
+                              nextPrevChapterPair?.second != null,
                           mangaReaderNavigationLayout:
                               mangaReaderNavigationLayout,
                           mangaTapInvert: mangaTapInvert,
@@ -821,6 +846,8 @@ class ReaderView extends HookConsumerWidget {
     this.mangaTapInvert,
     this.onNextBoundary = _noBoundaryNavigation,
     this.onPreviousBoundary = _noBoundaryNavigation,
+    this.hasNextBoundary = _noBoundaryNavigation,
+    this.hasPreviousBoundary = _noBoundaryNavigation,
     required this.readerSwipeChapterToggle,
     required this.lastPageSwipeEnabled,
     required this.resolvedReaderMode,
@@ -842,6 +869,8 @@ class ReaderView extends HookConsumerWidget {
   final VoidCallback onPrevious;
   final bool Function() onNextBoundary;
   final bool Function() onPreviousBoundary;
+  final bool Function() hasNextBoundary;
+  final bool Function() hasPreviousBoundary;
   final ({ChapterDto? first, ChapterDto? second})? prevNextChapterPair;
   final ReaderNavigationLayout mangaReaderNavigationLayout;
   final TapInvert? mangaTapInvert;
@@ -952,6 +981,8 @@ class ReaderView extends HookConsumerWidget {
           onPrevious: onPrevious,
           onNextBoundary: onNextBoundary,
           onPreviousBoundary: onPreviousBoundary,
+          hasNextBoundary: hasNextBoundary,
+          hasPreviousBoundary: hasPreviousBoundary,
           navigationLayout: layout,
           tapInvert: tapInvert,
           smallerTapZones: smallerTapZones,

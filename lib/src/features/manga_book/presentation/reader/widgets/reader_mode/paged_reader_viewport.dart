@@ -14,6 +14,7 @@ import '../../../../../../constants/enum.dart';
 import '../../../../../../widgets/custom_circular_progress_indicator.dart';
 import '../reader_wrapper.dart';
 import 'double_page_view.dart';
+import 'paged_display_window.dart';
 import 'paged_spread_mapping.dart';
 
 enum _DragOwner { page, pager }
@@ -42,12 +43,19 @@ class PagedReaderController {
   bool get isAtLast => _state?.isAtLastDisplay ?? false;
 }
 
+/// Continuous multi-chapter paged viewport.
+///
+/// Renders a [PagedDisplayWindow] — the prev/current/next chapters composed
+/// into ONE display list with virtual transition cards between them — so paging
+/// across a chapter boundary is just a page turn inside the same pager (no route
+/// rebuild). The host swaps in a fresh window (append/prepend a chapter) and
+/// this widget re-anchors to the same content on [didUpdateWidget]. Progress is
+/// reported as `(chapterId, raw)` so the host can address the VISIBLE chapter.
 class PagedReaderViewport extends StatefulWidget {
   const PagedReaderViewport({
     super.key,
     required this.controller,
-    required this.mapping,
-    required this.pages,
+    required this.window,
     required this.initialDisplayIndex,
     required this.axis,
     required this.reverse,
@@ -60,19 +68,20 @@ class PagedReaderViewport extends StatefulWidget {
     required this.reversePair,
     required this.cropBorders,
     required this.onPageWide,
-    required this.onRawPageChanged,
+    required this.onChapterPageChanged,
+    required this.transitionBuilder,
     required this.pinchEnabled,
     required this.doubleTapToZoom,
     required this.disableZoomIn,
     required this.disableZoomOut,
     required this.navigateToPan,
-    this.previousBoundary,
-    this.nextBoundary,
+    this.onIdle,
+    this.onReachedStartEdge,
+    this.onReachedEndEdge,
   });
 
   final PagedReaderController controller;
-  final SpreadMapping mapping;
-  final List<String> pages;
+  final PagedDisplayWindow window;
   final int initialDisplayIndex;
   final Axis axis;
   final bool reverse;
@@ -84,15 +93,34 @@ class PagedReaderViewport extends StatefulWidget {
   final bool rotateWideInvert;
   final bool reversePair;
   final bool cropBorders;
-  final void Function(int raw, bool isWide) onPageWide;
-  final ValueChanged<int> onRawPageChanged;
+
+  /// Reports a wide (landscape) page for the given chapter so the host can
+  /// re-chunk that chapter's mapping. Chapter-scoped: two chapters can each
+  /// have a wide page 0.
+  final void Function(int chapterId, int raw, bool isWide) onPageWide;
+
+  /// Reports the current reading position as `(chapterId, furthest raw page)`
+  /// — the read-progress contract, addressed to the visible chapter.
+  final void Function(int chapterId, int raw) onChapterPageChanged;
+
+  /// Builds the card shown for a virtual chapter-boundary transition slot.
+  final Widget Function(TransitionDisplay) transitionBuilder;
+
+  /// Fired whenever the viewport settles onto a page (mount, page turn, jump,
+  /// re-anchor, or a bounce). The host uses this to apply an idle-gated window
+  /// swap without disrupting an in-progress drag/animation.
+  final VoidCallback? onIdle;
+
+  /// The outer edges of the window just bounce; these let the host surface
+  /// start/end-of-manga feedback.
+  final VoidCallback? onReachedStartEdge;
+  final VoidCallback? onReachedEndEdge;
+
   final bool pinchEnabled;
   final bool doubleTapToZoom;
   final bool disableZoomIn;
   final bool disableZoomOut;
   final bool navigateToPan;
-  final Widget? previousBoundary;
-  final Widget? nextBoundary;
 
   @override
   State<PagedReaderViewport> createState() => _PagedReaderViewportState();
@@ -115,6 +143,7 @@ class _PagedReaderViewportState extends State<PagedReaderViewport>
   static const Duration _maxSettleDuration = Duration(milliseconds: 180);
   static const Duration _minSettleDuration = Duration(milliseconds: 70);
   static const Duration _panFlingDuration = Duration(milliseconds: 400);
+  static const Duration _doubleTapZoomDuration = Duration(milliseconds: 200);
   static const Curve _settleCurve = Curves.easeOutCubic;
 
   late int _displayIndex;
@@ -125,10 +154,11 @@ class _PagedReaderViewportState extends State<PagedReaderViewport>
   double _dragOffset = 0;
   Size _viewportSize = Size.zero;
   final Map<int, Offset> _pointers = {};
-  // Keyed by page identity (the entry's first unit), not display index — a late
-  // wide page re-chunks the mapping and shifts display indices, which would
-  // otherwise bind a page's zoom/pan state to whatever page later takes its slot.
-  final Map<PageUnit, _PageZoomController> _zoomControllers = {};
+  // Keyed by (chapterId, page identity), not display index — a late wide page
+  // re-chunks a chapter's mapping and shifts display indices, and two chapters
+  // can share a raw index, so the chapter disambiguates equal raws.
+  final Map<({int chapterId, PageUnit unit}), _PageZoomController>
+      _zoomControllers = {};
 
   Offset? _lastSinglePosition;
   Offset _totalDrag = Offset.zero;
@@ -148,6 +178,10 @@ class _PagedReaderViewportState extends State<PagedReaderViewport>
   VelocityTracker? _velocityTracker;
   int? _velocityPointer;
   _PageZoomController? _panAnimationTarget;
+  late final AnimationController _zoomAnimation;
+  Animation<double>? _zoomScaleTween;
+  Animation<Offset>? _zoomOffsetTween;
+  _PageZoomController? _zoomAnimationTarget;
 
   @override
   void initState() {
@@ -177,6 +211,22 @@ class _PagedReaderViewportState extends State<PagedReaderViewport>
         _panAnimationTarget = null;
       }
     });
+    _zoomAnimation = AnimationController(vsync: this);
+    _zoomAnimation.addListener(() {
+      final target = _zoomAnimationTarget;
+      final scale = _zoomScaleTween?.value;
+      final offset = _zoomOffsetTween?.value;
+      if (target == null || scale == null || offset == null) return;
+      target.setScaleOffset(scale, offset);
+    });
+    _zoomAnimation.addStatusListener((status) {
+      if (status == AnimationStatus.completed ||
+          status == AnimationStatus.dismissed) {
+        _zoomScaleTween = null;
+        _zoomOffsetTween = null;
+        _zoomAnimationTarget = null;
+      }
+    });
     widget.controller._attach(this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
@@ -191,17 +241,11 @@ class _PagedReaderViewportState extends State<PagedReaderViewport>
       oldWidget.controller._detach(this);
       widget.controller._attach(this);
     }
-    if (oldWidget.mapping != widget.mapping) {
-      final wasBoundary =
-          _displayIndex < 0 || _displayIndex >= oldWidget.mapping.length;
-      if (wasBoundary) {
-        _displayIndex = _clampDisplay(widget.initialDisplayIndex);
-      } else {
-        final raw = oldWidget.mapping.displayToRaw(_displayIndex);
-        _displayIndex = _clampDisplay(widget.mapping.rawToDisplay(raw));
-      }
-      _dragOffset = 0;
-      _emitRawPage();
+    // The host makes a NEW window instance per swap (append/prepend). Re-anchor
+    // to the same content so a prepend that shifts every index doesn't jump the
+    // page the user is reading.
+    if (!identical(oldWidget.window, widget.window)) {
+      _reanchor(oldWidget.window);
     }
     _syncZoomBounds();
   }
@@ -211,6 +255,7 @@ class _PagedReaderViewportState extends State<PagedReaderViewport>
     widget.controller._detach(this);
     _pageAnimation.dispose();
     _panAnimation.dispose();
+    _zoomAnimation.dispose();
     _longPressTimer?.cancel();
     _singleTapTimer?.cancel();
     for (final controller in _zoomControllers.values) {
@@ -219,10 +264,39 @@ class _PagedReaderViewportState extends State<PagedReaderViewport>
     super.dispose();
   }
 
+  void _reanchor(PagedDisplayWindow oldWindow) {
+    final item = (_displayIndex >= 0 && _displayIndex < oldWindow.length)
+        ? oldWindow.items[_displayIndex]
+        : null;
+    var target = -1;
+    if (item is SpreadDisplay) {
+      target =
+          widget.window.chapterRawToDisplay(item.chapterId, item.entry.first.raw);
+    } else if (item is TransitionDisplay) {
+      // Anchor to the chapter being ENTERED (its first page). For an
+      // end-of-window "next chapter" card that doesn't know its target yet, fall
+      // back to the LAST page of the chapter just finished — never its first,
+      // which would throw the reader back to that chapter's start.
+      if (item.toChapterId != null) {
+        target = widget.window.firstDisplayOf(item.toChapterId!);
+      }
+      if (target < 0 && item.fromChapterId != null) {
+        target = widget.window.lastDisplayOf(item.fromChapterId!);
+      }
+    }
+    _displayIndex =
+        target >= 0 ? target : _clampDisplay(widget.initialDisplayIndex);
+    _dragOffset = 0;
+    _emitRawPage();
+  }
+
   void jumpToRaw(int rawIndex) {
     _stopPanAnimation();
-    final target = _clampDisplay(widget.mapping.rawToDisplay(rawIndex));
-    if (target == _displayIndex) {
+    final chapterId = _currentChapterId();
+    final target = chapterId == null
+        ? -1
+        : widget.window.chapterRawToDisplay(chapterId, rawIndex);
+    if (target < 0 || target == _displayIndex) {
       _emitRawPage();
       return;
     }
@@ -236,48 +310,59 @@ class _PagedReaderViewportState extends State<PagedReaderViewport>
   void moveByCommand(int delta) {
     if (delta == 0 || _pageAnimation.isAnimating) return;
     _stopPanAnimation();
-    if (_isBoundaryDisplay(_displayIndex)) {
-      _moveFromBoundary(delta);
-      return;
-    }
     if (widget.navigateToPan && _panCurrentPage(_commandPanDirection(delta))) {
       return;
     }
     _animateToDisplay(_displayIndex + delta);
   }
 
-  bool get isAtFirstDisplay =>
-      widget.previousBoundary != null ? _displayIndex < 0 : _displayIndex <= 0;
+  bool get isAtFirstDisplay => _displayIndex <= 0;
 
-  bool get isAtLastDisplay => !widget.mapping.isEmpty
-      ? widget.nextBoundary != null
-          ? _displayIndex >= widget.mapping.length
-          : _displayIndex >= widget.mapping.length - 1
-      : false;
+  bool get isAtLastDisplay =>
+      !widget.window.isEmpty && _displayIndex >= widget.window.length - 1;
 
   int _clampDisplay(int index) {
-    if (widget.mapping.isEmpty) return 0;
-    return index.clamp(0, widget.mapping.length - 1).toInt();
+    if (widget.window.isEmpty) return 0;
+    return index.clamp(0, widget.window.length - 1).toInt();
   }
+
+  void _notifyIdle() => widget.onIdle?.call();
 
   void _emitRawPage() {
-    if (widget.mapping.isEmpty || _isBoundaryDisplay(_displayIndex)) return;
-    widget.onRawPageChanged(widget.mapping.displayToProgressRaw(_displayIndex));
+    if (widget.window.isEmpty) {
+      _notifyIdle();
+      return;
+    }
+    final progress = widget.window.displayToChapterProgressRaw(_displayIndex);
+    if (progress != null) {
+      widget.onChapterPageChanged(progress.chapterId, progress.raw);
+    }
+    _notifyIdle();
   }
 
-  bool _isPreviousBoundary(int index) => index < 0;
-
-  bool _isNextBoundary(int index) => index >= widget.mapping.length;
-
-  bool _isBoundaryDisplay(int index) =>
-      _isPreviousBoundary(index) || _isNextBoundary(index);
-
-  bool _hasDisplayEntry(int index) {
-    if (index >= 0 && index < widget.mapping.length) return true;
-    if (index == -1) return widget.previousBoundary != null;
-    if (index == widget.mapping.length) return widget.nextBoundary != null;
-    return false;
+  /// True when [index] is a transition card or out of range — no zoom / pages /
+  /// long-press there.
+  bool _isTransitionSlot(int index) {
+    if (index < 0 || index >= widget.window.length) return true;
+    return widget.window.items[index] is! SpreadDisplay;
   }
+
+  /// The chapter shown at the current slot; scans outward when the slot is a
+  /// transition card so a seek still resolves to a chapter.
+  int? _currentChapterId() {
+    final here = widget.window.displayToChapterRaw(_displayIndex);
+    if (here != null) return here.chapterId;
+    for (var d = 1; d < widget.window.length; d++) {
+      final before = widget.window.displayToChapterRaw(_displayIndex - d);
+      if (before != null) return before.chapterId;
+      final after = widget.window.displayToChapterRaw(_displayIndex + d);
+      if (after != null) return after.chapterId;
+    }
+    return null;
+  }
+
+  bool _hasDisplayEntry(int index) =>
+      index >= 0 && index < widget.window.length;
 
   void _syncZoomBounds() {
     for (final controller in _zoomControllers.values) {
@@ -301,7 +386,7 @@ class _PagedReaderViewportState extends State<PagedReaderViewport>
       : _viewportSize.height;
 
   _PageZoomController? get _currentZoomOrNull {
-    if (_isBoundaryDisplay(_displayIndex)) return null;
+    if (_isTransitionSlot(_displayIndex)) return null;
     return _zoomControllerFor(_displayIndex)
       ..configure(
         minScale: _minScale,
@@ -310,14 +395,16 @@ class _PagedReaderViewportState extends State<PagedReaderViewport>
       );
   }
 
-  _PageZoomController _zoomControllerFor(int displayIndex) =>
-      _zoomControllers.putIfAbsent(
-        widget.mapping.entries[displayIndex].first,
-        () => _PageZoomController(
-          minScale: _minScale,
-          maxScale: _maxScale,
-        ),
-      );
+  _PageZoomController _zoomControllerFor(int displayIndex) {
+    final item = widget.window.items[displayIndex] as SpreadDisplay;
+    return _zoomControllers.putIfAbsent(
+      (chapterId: item.chapterId, unit: item.entry.first),
+      () => _PageZoomController(
+        minScale: _minScale,
+        maxScale: _maxScale,
+      ),
+    );
+  }
 
   void _onPointerDown(PointerDownEvent event) {
     // A touch that lands mid-settle is an interrupt, not a nav tap — remember
@@ -329,6 +416,7 @@ class _PagedReaderViewportState extends State<PagedReaderViewport>
     }
     _pageAnimation.stop();
     _stopPanAnimation();
+    _stopZoomAnimation();
     _singleTapTimer?.cancel();
     _pointers[event.pointer] = event.localPosition;
     if (_pointers.length == 1) {
@@ -489,7 +577,7 @@ class _PagedReaderViewportState extends State<PagedReaderViewport>
   }
 
   void _startLongPressTimer(Offset position) {
-    if (_isBoundaryDisplay(_displayIndex)) return;
+    if (_isTransitionSlot(_displayIndex)) return;
     _longPressTimer?.cancel();
     _longPressTimer = Timer(_longPressDelay, () {
       if (!mounted ||
@@ -588,7 +676,30 @@ class _PagedReaderViewportState extends State<PagedReaderViewport>
     final target = zoom.scale > _neutralScale + 0.05
         ? _neutralScale
         : math.min(2.0, _maxScale);
-    zoom.setScaleAround(target, position);
+    _animateZoomTo(zoom, zoom.scaleAroundTarget(target, position));
+  }
+
+  /// Animate a page's zoom to a target scale/offset (double-tap), so it eases
+  /// in instead of snapping — matching the webtoon reader's zoom feel.
+  void _animateZoomTo(
+      _PageZoomController zoom, ({double scale, Offset offset}) end) {
+    // reset() drives the controller to `dismissed`, which fires the status
+    // listener that clears these tweens — so it has to run BEFORE we build them.
+    // A second double-tap arrives with the controller sitting at `completed`, so
+    // resetting after assignment would null the tweens it just created and the
+    // zoom would never animate (page stuck zoomed).
+    _zoomAnimation
+      ..stop()
+      ..reset();
+    _zoomAnimationTarget = zoom;
+    _zoomScaleTween = Tween<double>(begin: zoom.scale, end: end.scale).animate(
+        CurvedAnimation(parent: _zoomAnimation, curve: Curves.easeOutCubic));
+    _zoomOffsetTween = Tween<Offset>(begin: zoom.offset, end: end.offset)
+        .animate(
+            CurvedAnimation(parent: _zoomAnimation, curve: Curves.easeOutCubic));
+    _zoomAnimation
+      ..duration = _doubleTapZoomDuration
+      ..forward();
   }
 
   void _handleSingleTap(Offset position) {
@@ -674,14 +785,6 @@ class _PagedReaderViewportState extends State<PagedReaderViewport>
 
   void _settleDrag({double releaseVelocity = 0}) {
     if (_axisExtent <= 0) return;
-    final boundaryDirection =
-        _boundaryMoveDirection(releaseVelocity: releaseVelocity);
-    if (boundaryDirection != null) {
-      final movedChapter = _requestBoundaryMove(boundaryDirection);
-      if (!movedChapter) _animateOffsetTo(0);
-      return;
-    }
-
     final signedDistance = -_dragOffset * _axisSign;
     final signedVelocity = -releaseVelocity * _axisSign;
     if (signedDistance.abs() > _touchSlop &&
@@ -704,9 +807,9 @@ class _PagedReaderViewportState extends State<PagedReaderViewport>
     _animateOffsetTo(0);
   }
 
-  // One display slot (single page or a full spread) always travels a full
-  // viewport, so the turn threshold is the full extent for both — halving it
-  // for spreads made them commit a turn at half the drag distance.
+  // One display slot (single page, spread, or transition card) always travels a
+  // full viewport, so the turn threshold is the full extent — halving it for
+  // spreads made them commit a turn at half the drag distance.
   double get _pageTurnExtent => _axisExtent;
 
   double _mainAxisDelta(Offset offset) =>
@@ -752,9 +855,25 @@ class _PagedReaderViewportState extends State<PagedReaderViewport>
     _panAnimationTarget = null;
   }
 
+  void _stopZoomAnimation() {
+    if (!_zoomAnimation.isAnimating) return;
+    _zoomAnimation.stop();
+    _zoomScaleTween = null;
+    _zoomOffsetTween = null;
+    _zoomAnimationTarget = null;
+  }
+
   void _animateToDisplay(int targetDisplay) {
-    if (!_hasDisplayEntry(targetDisplay)) {
-      _animateThroughBoundary(targetDisplay < 0 ? -1 : 1);
+    // The window's OUTER edges just bounce (the host surfaces start/end-of-manga
+    // feedback). Interior transition cards are ordinary slots and page normally.
+    if (targetDisplay < 0) {
+      widget.onReachedStartEdge?.call();
+      _animateOffsetTo(0);
+      return;
+    }
+    if (targetDisplay >= widget.window.length) {
+      widget.onReachedEndEdge?.call();
+      _animateOffsetTo(0);
       return;
     }
     final delta = targetDisplay - _displayIndex;
@@ -773,36 +892,10 @@ class _PagedReaderViewportState extends State<PagedReaderViewport>
     });
   }
 
-  void _animateThroughBoundary(int direction) {
-    final targetOffset = -direction * _axisSign * _axisExtent;
-    _animateOffsetTo(targetOffset, onComplete: () {
-      if (!mounted) return;
-      final movedChapter = _requestBoundaryMove(direction);
-      if (!movedChapter) _animateOffsetTo(0);
+  void _applyPagerDragDelta(double dragDelta) {
+    setState(() {
+      _dragOffset += dragDelta;
     });
-  }
-
-  void _moveFromBoundary(int delta) {
-    if (_displayIndex < 0) {
-      if (delta < 0) {
-        _requestBoundaryMove(-1);
-      } else {
-        _animateToDisplay(0);
-      }
-      return;
-    }
-    if (delta > 0) {
-      _requestBoundaryMove(1);
-    } else {
-      _animateToDisplay(widget.mapping.length - 1);
-    }
-  }
-
-  bool _requestBoundaryMove(int direction) {
-    final callbacks = ReaderInputScope.maybeOf(context);
-    return direction < 0
-        ? callbacks?.onPreviousBoundary() ?? false
-        : callbacks?.onNextBoundary() ?? false;
   }
 
   void _animateOffsetTo(double target, {VoidCallback? onComplete}) {
@@ -810,9 +903,9 @@ class _PagedReaderViewportState extends State<PagedReaderViewport>
     if (duration == Duration.zero || _axisExtent <= 0) {
       setState(() => _dragOffset = target == 0 ? 0 : target);
       onComplete?.call();
-      // onComplete may navigate to another chapter (pushReplacement) and tear
-      // this down — don't setState afterwards if we're gone.
+      // onComplete may re-anchor/tear down — don't setState afterwards if gone.
       if (target != 0 && mounted) setState(() => _dragOffset = 0);
+      if (target == 0) _notifyIdle();
       return;
     }
     _pageAnimation
@@ -826,41 +919,10 @@ class _PagedReaderViewportState extends State<PagedReaderViewport>
     _pageAnimation.forward().whenCompleteOrCancel(() {
       if (!mounted) return;
       onComplete?.call();
-      if (target == 0) setState(() => _dragOffset = 0);
-    });
-  }
-
-  int? _boundaryMoveDirection({double releaseVelocity = 0}) {
-    if (!_isBoundaryDisplay(_displayIndex)) return null;
-
-    final signedDistance = -_mainAxisDelta(_totalDrag) * _axisSign;
-    final signedVelocity = -releaseVelocity * _axisSign;
-    final signedProgress = signedDistance / _axisExtent;
-
-    if (_isNextBoundary(_displayIndex) &&
-        (signedProgress > _pageTurnThreshold ||
-            signedVelocity > _pageTurnVelocity)) {
-      return 1;
-    }
-    if (_isPreviousBoundary(_displayIndex) &&
-        (signedProgress < -_pageTurnThreshold ||
-            signedVelocity < -_pageTurnVelocity)) {
-      return -1;
-    }
-    return null;
-  }
-
-  double _clampBoundaryOverrun(double offset) {
-    if (!_isBoundaryDisplay(_displayIndex)) return offset;
-    final signedDistance = -offset * _axisSign;
-    if (_isNextBoundary(_displayIndex) && signedDistance > 0) return 0;
-    if (_isPreviousBoundary(_displayIndex) && signedDistance < 0) return 0;
-    return offset;
-  }
-
-  void _applyPagerDragDelta(double dragDelta) {
-    setState(() {
-      _dragOffset = _clampBoundaryOverrun(_dragOffset + dragDelta);
+      if (target == 0) {
+        setState(() => _dragOffset = 0);
+        _notifyIdle();
+      }
     });
   }
 
@@ -893,7 +955,7 @@ class _PagedReaderViewportState extends State<PagedReaderViewport>
 
   @override
   Widget build(BuildContext context) {
-    if (widget.mapping.isEmpty || widget.pages.isEmpty) {
+    if (widget.window.isEmpty) {
       return const Center(child: CenterSorayomiShimmerIndicator());
     }
     return LayoutBuilder(
@@ -941,24 +1003,24 @@ class _PagedReaderViewportState extends State<PagedReaderViewport>
       (index - _displayIndex) * _axisExtent * _axisSign + _dragOffset;
 
   Widget _buildDisplayEntry(int index) {
-    if (index == -1) {
-      return widget.previousBoundary ?? const SizedBox.shrink();
+    final item = widget.window.items[index];
+    if (item is TransitionDisplay) {
+      return widget.transitionBuilder(item);
     }
-    if (index == widget.mapping.length) {
-      return widget.nextBoundary ?? const SizedBox.shrink();
-    }
+    final spread = item as SpreadDisplay;
     return _ZoomedDisplayEntry(
       controller: _zoomControllerFor(index),
       child: DoublePageView(
-        entry: widget.mapping.entries[index],
-        pages: widget.pages,
+        entry: spread.entry,
+        pages: widget.window.pagesAt(index)!,
         pageFit: widget.pageFit,
         pageSize: widget.pageSize,
         centerMargin: widget.centerMargin,
         rotateWide: widget.rotateWide,
         rotateWideInvert: widget.rotateWideInvert,
         reversePair: widget.reversePair,
-        onPageWide: widget.onPageWide,
+        onPageWide: (raw, wide) =>
+            widget.onPageWide(spread.chapterId, raw, wide),
         cropBorders: widget.cropBorders,
       ),
     );
@@ -1061,18 +1123,28 @@ class _PageZoomController extends ChangeNotifier {
   }
 
   void setScaleAround(double targetScale, Offset focal) {
+    final t = scaleAroundTarget(targetScale, focal);
+    setScaleOffset(t.scale, t.offset);
+  }
+
+  /// The (scale, offset) that [setScaleAround] would land on — without applying
+  /// it, so the viewport can animate toward it.
+  ({double scale, Offset offset}) scaleAroundTarget(
+      double targetScale, Offset focal) {
     final nextScale = targetScale.clamp(minScale, maxScale).toDouble();
-    if (nextScale <= 1.001) {
-      _scale = nextScale;
-      _offset = Offset.zero;
-      notifyListeners();
-      return;
-    }
+    if (nextScale <= 1.001) return (scale: nextScale, offset: Offset.zero);
     final scaleRatio = nextScale / _scale;
     final viewportCenter = Offset(_viewport.width / 2, _viewport.height / 2);
     final focalFromCenter = focal - viewportCenter - _offset;
-    _scale = nextScale;
-    _offset = _clampOffset(_offset - focalFromCenter * (scaleRatio - 1));
+    return (
+      scale: nextScale,
+      offset: _clampOffset(_offset - focalFromCenter * (scaleRatio - 1)),
+    );
+  }
+
+  void setScaleOffset(double scale, Offset offset) {
+    _scale = scale.clamp(minScale, maxScale).toDouble();
+    _offset = _scale <= 1.001 ? Offset.zero : _clampOffset(offset);
     notifyListeners();
   }
 

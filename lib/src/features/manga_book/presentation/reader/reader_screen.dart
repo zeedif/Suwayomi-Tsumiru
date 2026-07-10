@@ -38,7 +38,7 @@ import 'controller/display_cutout.dart';
 import 'controller/reader_controller.dart';
 import 'widgets/chrome/reader_chrome.dart';
 import 'widgets/reader_mode/continuous_reader_mode.dart';
-import 'widgets/reader_mode/single_page_reader_mode.dart';
+import 'widgets/reader_mode/multichapter_paged_reader_mode.dart';
 
 class ReaderScreen extends HookConsumerWidget {
   const ReaderScreen({
@@ -234,10 +234,11 @@ class ReaderScreen extends HookConsumerWidget {
       SystemChrome.setEnabledSystemUIMode(
         hiddenChromeUiMode(fullscreen: fullscreen),
       );
-      return () => SystemChrome.setEnabledSystemUIMode(
-            SystemUiMode.manual,
-            overlays: SystemUiOverlay.values,
-          );
+      // Don't restore the OS bars on dispose: a chapter change is a
+      // pushReplacement (old screen disposes as the new one mounts), so
+      // restoring here flashes the system bars mid-transition. They're restored
+      // on a real exit in the pop handler below instead.
+      return null;
     }, []);
 
     // Draw reader content into the display cutout (notch/punch-hole) when opted
@@ -284,6 +285,12 @@ class ReaderScreen extends HookConsumerWidget {
     return PopScope(
       onPopInvokedWithResult: (didPop, _) async {
         if (didPop) {
+          // Leaving the reader for real — bring the OS bars back (kept hidden
+          // across chapter transitions by dropping the dispose-time restore).
+          SystemChrome.setEnabledSystemUIMode(
+            SystemUiMode.manual,
+            overlays: SystemUiOverlay.values,
+          );
           // Flush the latest page reached so progress isn't lost to a pending
           // debounce when you back out. AWAIT it so the read write lands before
           // we invalidate the lists below — otherwise they re-fetch the stale
@@ -331,7 +338,7 @@ class ReaderScreen extends HookConsumerWidget {
                       return switch (autoWebtoon
                           ? ReaderMode.webtoon
                           : data.metaData.readerMode ?? defaultReaderMode) {
-                        ReaderMode.singleVertical => SinglePageReaderMode(
+                        ReaderMode.singleVertical => MultiChapterPagedReaderMode(
                             chapter: chapterData,
                             manga: data,
                             onPageChanged: onPageChanged,
@@ -343,7 +350,7 @@ class ReaderScreen extends HookConsumerWidget {
                           ),
                         ReaderMode.singleHorizontalRTL ||
                         ReaderMode.continuousHorizontalRTL =>
-                          SinglePageReaderMode(
+                          MultiChapterPagedReaderMode(
                             chapter: chapterData,
                             manga: data,
                             onPageChanged: onPageChanged,
@@ -355,7 +362,7 @@ class ReaderScreen extends HookConsumerWidget {
                           ),
                         ReaderMode.singleHorizontalLTR ||
                         ReaderMode.continuousHorizontalLTR =>
-                          SinglePageReaderMode(
+                          MultiChapterPagedReaderMode(
                             chapter: chapterData,
                             manga: data,
                             onPageChanged: onPageChanged,
@@ -385,7 +392,7 @@ class ReaderScreen extends HookConsumerWidget {
                               defaultReaderMode ?? ReaderMode.webtoon) {
                             ReaderMode.singleHorizontalLTR ||
                             ReaderMode.continuousHorizontalLTR =>
-                              SinglePageReaderMode(
+                              MultiChapterPagedReaderMode(
                                 chapter: chapterData,
                                 manga: data,
                                 onPageChanged: onPageChanged,
@@ -394,7 +401,7 @@ class ReaderScreen extends HookConsumerWidget {
                               ),
                             ReaderMode.singleHorizontalRTL ||
                             ReaderMode.continuousHorizontalRTL =>
-                              SinglePageReaderMode(
+                              MultiChapterPagedReaderMode(
                                 chapter: chapterData,
                                 manga: data,
                                 onPageChanged: onPageChanged,
@@ -404,7 +411,7 @@ class ReaderScreen extends HookConsumerWidget {
                                 chapterPages: chapterPagesData,
                                 openAtEnd: openAtEnd,
                               ),
-                            ReaderMode.singleVertical => SinglePageReaderMode(
+                            ReaderMode.singleVertical => MultiChapterPagedReaderMode(
                                 chapter: chapterData,
                                 manga: data,
                                 onPageChanged: onPageChanged,
