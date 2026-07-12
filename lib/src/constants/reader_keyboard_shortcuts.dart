@@ -17,43 +17,49 @@ class PreviousChapterIntent extends Intent {}
 
 class HideQuickOpenIntent extends Intent {}
 
-ShortcutManager readerShortcutManager(Axis scrollDirection) => ShortcutManager(
+class ViewportScrollForwardIntent extends Intent {}
+
+class ViewportScrollBackwardIntent extends Intent {}
+
+ShortcutManager readerShortcutManager(Axis scrollDirection,
+        {bool isRtl = false}) =>
+    ShortcutManager(
       shortcuts: {
         const SingleActivator(LogicalKeyboardKey.space): NextScrollIntent(),
         const SingleActivator(LogicalKeyboardKey.space, shift: true):
             PreviousScrollIntent(),
+        // RTL manga reads right→left, so the physical left key advances.
         const SingleActivator(LogicalKeyboardKey.arrowLeft):
-            scrollDirection == Axis.horizontal
-                ? PreviousScrollIntent()
-                : PreviousChapterIntent(),
+            isRtl ? NextScrollIntent() : PreviousScrollIntent(),
         const SingleActivator(LogicalKeyboardKey.keyA):
-            scrollDirection == Axis.horizontal
-                ? PreviousScrollIntent()
-                : PreviousChapterIntent(),
+            isRtl ? NextScrollIntent() : PreviousScrollIntent(),
         const SingleActivator(LogicalKeyboardKey.arrowRight):
-            scrollDirection == Axis.horizontal
-                ? NextScrollIntent()
-                : NextChapterIntent(),
+            isRtl ? PreviousScrollIntent() : NextScrollIntent(),
         const SingleActivator(LogicalKeyboardKey.keyD):
-            scrollDirection == Axis.horizontal
-                ? NextScrollIntent()
-                : NextChapterIntent(),
+            isRtl ? PreviousScrollIntent() : NextScrollIntent(),
+        const SingleActivator(LogicalKeyboardKey.comma):
+            PreviousChapterIntent(),
+        const SingleActivator(LogicalKeyboardKey.period): NextChapterIntent(),
         const SingleActivator(LogicalKeyboardKey.arrowUp):
             scrollDirection == Axis.vertical
-                ? PreviousScrollIntent()
+                ? ViewportScrollBackwardIntent()
                 : NextChapterIntent(),
         const SingleActivator(LogicalKeyboardKey.keyW):
             scrollDirection == Axis.vertical
-                ? PreviousScrollIntent()
+                ? ViewportScrollBackwardIntent()
                 : NextChapterIntent(),
         const SingleActivator(LogicalKeyboardKey.arrowDown):
             scrollDirection == Axis.vertical
-                ? NextScrollIntent()
+                ? ViewportScrollForwardIntent()
                 : PreviousChapterIntent(),
         const SingleActivator(LogicalKeyboardKey.keyS):
             scrollDirection == Axis.vertical
-                ? NextScrollIntent()
+                ? ViewportScrollForwardIntent()
                 : PreviousChapterIntent(),
+        const SingleActivator(LogicalKeyboardKey.pageUp):
+            ViewportScrollBackwardIntent(),
+        const SingleActivator(LogicalKeyboardKey.pageDown):
+            ViewportScrollForwardIntent(),
         const SingleActivator(LogicalKeyboardKey.escape): HideQuickOpenIntent(),
       },
     );
