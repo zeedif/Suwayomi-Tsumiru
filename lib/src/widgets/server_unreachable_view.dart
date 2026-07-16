@@ -31,6 +31,7 @@ class ServerUnreachableView extends StatelessWidget {
       subTitle: context.l10n.serverUnreachableSubtitle,
       button: Column(
         mainAxisSize: MainAxisSize.min,
+        spacing: 8,
         children: [
           FilledButton.tonalIcon(
             onPressed: () => const ConnectionRoute().go(context),

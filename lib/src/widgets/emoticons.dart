@@ -42,6 +42,7 @@ class Emoticons extends HookWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           mainAxisAlignment: MainAxisAlignment.center,
+          spacing: 8,
           children: [
             iconData != null
                 ? Icon(iconData, size: context.height * .2)
@@ -50,7 +51,7 @@ class Emoticons extends HookWidget {
                     textAlign: TextAlign.center,
                     style: context.textTheme.displayMedium,
                   ),
-            const Gap(16),
+            const Gap(8),
             if (title.isNotBlank)
               Text(
                 title!,
