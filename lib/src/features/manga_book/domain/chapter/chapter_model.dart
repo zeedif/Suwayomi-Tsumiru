@@ -4,10 +4,15 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+import 'package:intl/intl.dart';
+
 import '../../../../utils/extensions/custom_extensions.dart';
 import 'graphql/__generated__/fragment.graphql.dart';
 
 typedef ChapterDto = Fragment$ChapterDto;
+
+// Matches Komikku's formatter: up to 3 decimals, trailing zeros dropped.
+final _chapterNumberFormat = NumberFormat('#.###', 'en_US');
 
 typedef ChapterWithMangaDto = Fragment$ChapterWithMangaDto;
 
@@ -17,6 +22,9 @@ extension ChapterExtension on Fragment$ChapterDto {
   }
 
   int get index => sourceOrder;
+
+  String get formattedChapterNumber =>
+      _chapterNumberFormat.format(chapterNumber);
 
   bool get hasReadingProgress =>
       isRead || lastPageRead > 0 || lastReadAt != '0';
