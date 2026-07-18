@@ -6,7 +6,6 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
-import 'package:gap/gap.dart';
 
 import '../constants/app_sizes.dart';
 import '../utils/extensions/custom_extensions.dart';
@@ -42,15 +41,18 @@ class Emoticons extends HookWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           mainAxisAlignment: MainAxisAlignment.center,
+          spacing: 8,
           children: [
-            iconData != null
-                ? Icon(iconData, size: context.height * .2)
-                : Text(
-                    errorFace,
-                    textAlign: TextAlign.center,
-                    style: context.textTheme.displayMedium,
-                  ),
-            const Gap(16),
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8.0),
+              child: iconData != null
+                  ? Icon(iconData, size: context.height * .2)
+                  : Text(
+                      errorFace,
+                      textAlign: TextAlign.center,
+                      style: context.textTheme.displayMedium,
+                    ),
+            ),
             if (title.isNotBlank)
               Text(
                 title!,
