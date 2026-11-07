@@ -1489,10 +1489,6 @@
   "@categoryNumberOfItems": {
     "description": "Library Display > Tabs: checkbox to show a manga count next to each category tab label"
   },
-  "categoryTabs": "Show category tabs",
-  "@categoryTabs": {
-    "description": "Library Group checkbox to show or hide the category tab bar in Tabs mode"
-  },
   "categoryVisibilityDeviceOnly": "Changed on this device only until you reconnect",
   "@categoryVisibilityDeviceOnly": {
     "description": "Toast when hiding or showing a category offline: the change lives on the device mirror and the server setting returns on the next online sync"
@@ -1500,6 +1496,30 @@
   "sectionHeadersShowAllCategories": "Show all categories",
   "@sectionHeadersShowAllCategories": {
     "description": "Library Group checkbox to scroll all sections together in Section headers mode"
+  },
+  "libraryTabBar": "Tab bar",
+  "@libraryTabBar": {
+    "description": "Library Group heading above the choices for when the tab bar shows in Tabs mode"
+  },
+  "libraryTabBarHint": "Tabs only show when there's more than one group",
+  "@libraryTabBarHint": {
+    "description": "Library Group hint under the tab bar choices: with a single group no tab bar is drawn whatever the choice"
+  },
+  "librarySectionHeaders": "Headers",
+  "@librarySectionHeaders": {
+    "description": "Library Group heading above the choices for when section headers show in Section headers mode"
+  },
+  "libraryBarAlways": "Always",
+  "@libraryBarAlways": {
+    "description": "Tab bar or section header choice: always visible, pinned at the top"
+  },
+  "libraryBarTop": "Only at the top",
+  "@libraryBarTop": {
+    "description": "Tab bar or section header choice: visible at the top of the page, scrolls away with the entries"
+  },
+  "libraryBarNever": "Never",
+  "@libraryBarNever": {
+    "description": "Tab bar or section header choice: never shown"
   },
   "showHiddenCategories": "Show hidden categories",
   "@showHiddenCategories": {

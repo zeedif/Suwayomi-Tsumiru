@@ -500,7 +500,7 @@ enum LibraryBadge {
   };
 }
 
-/// Persisted by index; categoryTabs and sectionHeadersShowAllCategories modify the active style.
+/// Persisted by index; libraryTabsMode, sectionHeadersShowAllCategories and sectionHeadersMode modify the active style.
 enum LibraryGroupStyle {
   tabs,
 
@@ -509,6 +509,19 @@ enum LibraryGroupStyle {
   String toLocale(BuildContext context) => switch (this) {
     LibraryGroupStyle.tabs => context.l10n.groupStyleTabs,
     LibraryGroupStyle.headers => context.l10n.groupStyleHeaders,
+  };
+}
+
+/// When the tab bar or section headers show. Persisted by index.
+enum LibraryBarMode {
+  always,
+  top,
+  never;
+
+  String toLocale(BuildContext context) => switch (this) {
+    LibraryBarMode.always => context.l10n.libraryBarAlways,
+    LibraryBarMode.top => context.l10n.libraryBarTop,
+    LibraryBarMode.never => context.l10n.libraryBarNever,
   };
 }
 

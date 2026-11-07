@@ -9,6 +9,7 @@ import 'dart:math';
 
 import 'package:collection/collection.dart';
 import 'package:fluentui_system_icons/fluentui_system_icons.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
@@ -97,14 +98,21 @@ Widget _libraryPageLayout(Widget? tabStrip, Widget child) =>
       child: child,
     );
 
-bool _showTabBar(LibraryGroupStyle style, bool categoryTabsOn) =>
-    style == LibraryGroupStyle.tabs && categoryTabsOn;
+bool _showTabBar(LibraryGroupStyle style, LibraryBarMode tabsMode) =>
+    style == LibraryGroupStyle.tabs && tabsMode != LibraryBarMode.never;
+
+/// Lets [bar] slide away while the open page is scrolled, in the Only at the top mode.
+Widget? _tabsBar(LibraryBarMode mode, ValueListenable<bool> atTop, Widget? bar) =>
+    bar == null || mode != LibraryBarMode.top
+    ? bar
+    : _TopOnly(atTop: atTop, child: bar);
 
 bool _showInlineHeaders(LibraryGroupStyle style, bool showAllCategories) =>
     style == LibraryGroupStyle.headers && !showAllCategories;
 
 Widget _groupedBody({
   required bool useTabs,
+  required ValueNotifier<bool> atTop,
   required List<LibrarySection> sections,
   required bool byCategory,
   required bool showCounts,
@@ -112,7 +120,9 @@ Widget _groupedBody({
 }) => Builder(
   builder: (context) => Padding(
     padding: context.usesDesktopShell ? EdgeInsets.zero : KEdgeInsets.h8.size,
-    child: useTabs
+    child: _TopTracker(
+      atTop: atTop,
+      child: useTabs
         ? Builder(
             builder: (context) {
               final tabs = tabViews();
@@ -135,8 +145,51 @@ Widget _groupedBody({
             byCategory: byCategory,
             showCounts: showCounts,
           ),
+    ),
   ),
 );
+
+/// Reports whether the open page sits at its top; paging between tabs counts as the top.
+class _TopTracker extends StatelessWidget {
+  const _TopTracker({required this.atTop, required this.child});
+
+  final ValueNotifier<bool> atTop;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => NotificationListener<ScrollNotification>(
+    onNotification: (notification) {
+      final metrics = notification.metrics;
+      atTop.value =
+          metrics.axis == Axis.horizontal || metrics.extentBefore <= 0;
+      return false;
+    },
+    child: child,
+  );
+}
+
+class _TopOnly extends StatelessWidget {
+  const _TopOnly({required this.atTop, required this.child});
+
+  final ValueListenable<bool> atTop;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => ValueListenableBuilder<bool>(
+    valueListenable: atTop,
+    builder: (context, visible, child) => ClipRect(
+      child: AnimatedAlign(
+        duration: context.reduceMotion
+            ? Duration.zero
+            : const Duration(milliseconds: 200),
+        alignment: Alignment.bottomCenter,
+        heightFactor: visible ? 1 : 0,
+        child: child,
+      ),
+    ),
+    child: child,
+  );
+}
 
 /// Gives each desktop tab its own controller so the scrollbar attaches to only one position.
 class _TabScrollHost extends HookWidget {
@@ -337,6 +390,7 @@ class _DefaultLibraryToggledSearch extends HookConsumerWidget {
     final toast = ref.watch(toastProvider);
     final categoryList = ref.watch(libraryShownCategoryListProvider);
     final searchToggled = useState(false);
+    final atTop = useValueNotifier(true);
     final selectedId = useRef(categoryId);
     final scaffoldKey = useMemoized(GlobalKey<ScaffoldState>.new);
     useEffect(() {
@@ -345,12 +399,13 @@ class _DefaultLibraryToggledSearch extends HookConsumerWidget {
     }, [categoryId]);
     final style =
         ref.watch(libraryGroupStyleKeyProvider) ?? LibraryGroupStyle.tabs;
-    final categoryTabsOn = ref.watch(categoryTabsProvider).ifNull(true);
+    final tabsMode =
+        ref.watch(libraryTabsModeProvider) ?? LibraryBarMode.always;
     final showAllCategories = ref
         .watch(sectionHeadersShowAllCategoriesProvider)
         .ifNull(false);
     final useTabs = _useTabs(style, showAllCategories);
-    final showTabBar = _showTabBar(style, categoryTabsOn);
+    final showTabBar = _showTabBar(style, tabsMode);
     final showInlineHeaders = _showInlineHeaders(style, showAllCategories);
     final showCounts = ref.watch(categoryNumberOfItemsProvider).ifNull(false);
     final phone = context.windowSizeClass == WindowSizeClass.compact;
@@ -500,33 +555,35 @@ class _DefaultLibraryToggledSearch extends HookConsumerWidget {
                     child: _libraryBody(
                     ref,
                     header: topBar
-                        ? tabStrip
+                        ? _tabsBar(tabsMode, atTop, tabStrip)
                         : desktop
                         ? _desktopLibraryHeader(
                             onOpenOrganizer: () =>
                                 _openLibraryOrganizer(bodyContext),
                             trailing: trailing,
-                            tabStrip: tabStrip,
+                            tabStrip: _tabsBar(tabsMode, atTop, tabStrip),
                           )
                         : showTabBar && data.length.isGreaterThan(1)
-                        ? TabBar(
+                        ? _tabsBar(tabsMode, atTop, TabBar(
                             isScrollable: true,
                             tabs: data
                                 .map((e) => _CategoryTab(category: e))
                                 .toList(),
                             dividerColor: Colors.transparent,
-                          )
+                          ))
                         : null,
                 _groupedBody(
                   useTabs: useTabs,
+                  atTop: atTop,
                   sections: _categorySections(data),
                   byCategory: true,
                   showCounts: showCounts,
                   tabViews: () => data.map((e) {
                     final id = e.id.getValueOnNullOrNegative();
-                    final content = CategoryMangaList(
+                    Widget content({Widget? header}) => CategoryMangaList(
                       key: ValueKey(id),
                       categoryId: id,
+                      header: header,
                     );
                     return showInlineHeaders
                         ? _PagedSection(
@@ -534,9 +591,9 @@ class _DefaultLibraryToggledSearch extends HookConsumerWidget {
                             section: (id: id, name: e.name),
                             byCategory: true,
                             showCount: showCounts,
-                            child: content,
+                            builder: content,
                           )
-                        : content;
+                        : content();
                   }).toList(),
                     ),
                   ),
@@ -585,6 +642,7 @@ class _DefaultLibraryStickySearch extends HookConsumerWidget {
     }, [categoryId]);
     final scrollController = useScrollController();
     final searchBarKey = useMemoized(() => GlobalKey());
+    final atTop = useValueNotifier(true);
     final scaffoldKey = useMemoized(GlobalKey<ScaffoldState>.new);
     final isSearchBarHidden = _useIsSearchBarHidden(
       scrollController,
@@ -621,7 +679,8 @@ class _DefaultLibraryStickySearch extends HookConsumerWidget {
 
         final style =
             ref.watch(libraryGroupStyleKeyProvider) ?? LibraryGroupStyle.tabs;
-        final categoryTabsOn = ref.watch(categoryTabsProvider).ifNull(true);
+        final tabsMode =
+        ref.watch(libraryTabsModeProvider) ?? LibraryBarMode.always;
         final showAllCategories = ref
             .watch(sectionHeadersShowAllCategoriesProvider)
             .ifNull(false);
@@ -630,7 +689,7 @@ class _DefaultLibraryStickySearch extends HookConsumerWidget {
         final showCounts = ref
             .watch(categoryNumberOfItemsProvider)
             .ifNull(false);
-        final showTabs = data!.length > 1 && _showTabBar(style, categoryTabsOn);
+        final showTabs = data!.length > 1 && _showTabBar(style, tabsMode);
         final desktop = context.usesDesktopShell;
         final topBar = showsMergedTopBar(context);
         final phone = context.windowSizeClass == WindowSizeClass.compact;
@@ -685,8 +744,12 @@ class _DefaultLibraryStickySearch extends HookConsumerWidget {
                   child: NestedScrollView(
                     controller: scrollController,
                     headerSliverBuilder: (context, innerBoxIsScrolled) {
+                      final pinTabs = tabsMode != LibraryBarMode.top;
                       if (topBar) {
                         if (tabStrip == null) return [];
+                        if (!pinTabs) {
+                          return [SliverToBoxAdapter(child: tabStrip)];
+                        }
                         return [
                           SliverPersistentHeader(
                             pinned: true,
@@ -704,15 +767,17 @@ class _DefaultLibraryStickySearch extends HookConsumerWidget {
                           SliverPersistentHeader(
                             pinned: true,
                             delegate: _SliverFixedHeaderDelegate(
-                              height: showTabs ? 64 + 44 : 64,
+                              height: showTabs && pinTabs ? 64 + 44 : 64,
                         child: _desktopLibraryHeader(
                           onOpenOrganizer: () =>
                               _openLibraryOrganizer(bodyContext),
                           trailing: trailing,
-                          tabStrip: tabStrip,
+                          tabStrip: pinTabs ? tabStrip : null,
                         ),
                       ),
                     ),
+                    if (!pinTabs && tabStrip != null)
+                      SliverToBoxAdapter(child: tabStrip),
                   ];
                 }
                 return [
@@ -762,24 +827,26 @@ class _DefaultLibraryStickySearch extends HookConsumerWidget {
                   child: _libraryBody(
                     ref,
                     header: !desktop && !topBar && showTabs
-                        ? TabBar(
+                        ? _tabsBar(tabsMode, atTop, TabBar(
                             isScrollable: true,
                             tabs: data
                                 .map((e) => _CategoryTab(category: e))
                                 .toList(),
                             dividerColor: Colors.transparent,
-                          )
+                          ))
                         : null,
                     _groupedBody(
                       useTabs: useTabs,
+                      atTop: atTop,
                       sections: _categorySections(data),
                       byCategory: true,
                       showCounts: showCounts,
                       tabViews: () => data.map((e) {
                         final id = e.id.getValueOnNullOrNegative();
-                        final content = CategoryMangaList(
+                        Widget content({Widget? header}) => CategoryMangaList(
                           key: ValueKey(id),
                           categoryId: id,
+                          header: header,
                         );
                         return showInlineHeaders
                             ? _PagedSection(
@@ -787,9 +854,9 @@ class _DefaultLibraryStickySearch extends HookConsumerWidget {
                                 section: (id: id, name: e.name),
                                 byCategory: true,
                                 showCount: showCounts,
-                                child: content,
+                                builder: content,
                               )
-                            : content;
+                            : content();
                       }).toList(),
                     ),
                   ),
@@ -846,14 +913,16 @@ class _GroupedLibraryToggledSearch extends HookConsumerWidget {
     final toast = ref.watch(toastProvider);
     final groupedTabsAsync = ref.watch(libraryGroupedTabsProvider);
     final searchToggled = useState(false);
+    final atTop = useValueNotifier(true);
     final style =
         ref.watch(libraryGroupStyleKeyProvider) ?? LibraryGroupStyle.tabs;
-    final categoryTabsOn = ref.watch(categoryTabsProvider).ifNull(true);
+    final tabsMode =
+        ref.watch(libraryTabsModeProvider) ?? LibraryBarMode.always;
     final showAllCategories = ref
         .watch(sectionHeadersShowAllCategoriesProvider)
         .ifNull(false);
     final useTabs = _useTabs(style, showAllCategories);
-    final showTabBar = _showTabBar(style, categoryTabsOn);
+    final showTabBar = _showTabBar(style, tabsMode);
     final showInlineHeaders = _showInlineHeaders(style, showAllCategories);
     final showCounts = ref.watch(categoryNumberOfItemsProvider).ifNull(false);
     final phone = context.windowSizeClass == WindowSizeClass.compact;
@@ -1015,16 +1084,16 @@ class _GroupedLibraryToggledSearch extends HookConsumerWidget {
                     ref,
                     grouped: true,
                     header: topBar
-                        ? tabStrip
+                        ? _tabsBar(tabsMode, atTop, tabStrip)
                         : desktop
                         ? _desktopLibraryHeader(
                             onOpenOrganizer: () =>
                                 _openLibraryOrganizer(bodyContext),
                             trailing: trailing,
-                            tabStrip: tabStrip,
+                            tabStrip: _tabsBar(tabsMode, atTop, tabStrip),
                           )
                         : showTabBar && tabs.length > 1
-                        ? TabBar(
+                        ? _tabsBar(tabsMode, atTop, TabBar(
                             isScrollable: true,
                             tabs: tabs
                                 .map(
@@ -1033,17 +1102,19 @@ class _GroupedLibraryToggledSearch extends HookConsumerWidget {
                                 )
                                 .toList(),
                             dividerColor: Colors.transparent,
-                          )
+                          ))
                         : null,
               _groupedBody(
                 useTabs: useTabs,
+                atTop: atTop,
                 sections: _groupSections(tabs),
                 byCategory: false,
                 showCounts: showCounts,
                 tabViews: () => tabs.map((t) {
-                  final content = _GroupedMangaList(
+                  Widget content({Widget? header}) => _GroupedMangaList(
                     key: ValueKey(t.id),
                     tabId: t.id,
+                    header: header,
                   );
                   return showInlineHeaders
                       ? _PagedSection(
@@ -1051,9 +1122,9 @@ class _GroupedLibraryToggledSearch extends HookConsumerWidget {
                           section: (id: t.id, name: t.name),
                           byCategory: false,
                           showCount: showCounts,
-                          child: content,
+                          builder: content,
                         )
-                      : content;
+                      : content();
                 }).toList(),
               ),
             ),
@@ -1094,18 +1165,20 @@ class _GroupedLibraryStickySearch extends HookConsumerWidget {
     final groupedTabsAsync = ref.watch(libraryGroupedTabsProvider);
     final scrollController = useScrollController();
     final searchBarKey = useMemoized(() => GlobalKey());
+    final atTop = useValueNotifier(true);
     final isSearchBarHidden = _useIsSearchBarHidden(
       scrollController,
       searchBarKey,
     );
     final style =
         ref.watch(libraryGroupStyleKeyProvider) ?? LibraryGroupStyle.tabs;
-    final categoryTabsOn = ref.watch(categoryTabsProvider).ifNull(true);
+    final tabsMode =
+        ref.watch(libraryTabsModeProvider) ?? LibraryBarMode.always;
     final showAllCategories = ref
         .watch(sectionHeadersShowAllCategoriesProvider)
         .ifNull(false);
     final useTabs = _useTabs(style, showAllCategories);
-    final showTabBar = _showTabBar(style, categoryTabsOn);
+    final showTabBar = _showTabBar(style, tabsMode);
     final showInlineHeaders = _showInlineHeaders(style, showAllCategories);
     final showCounts = ref.watch(categoryNumberOfItemsProvider).ifNull(false);
     final desktop = context.usesDesktopShell;
@@ -1175,8 +1248,12 @@ class _GroupedLibraryStickySearch extends HookConsumerWidget {
                   child: NestedScrollView(
                     controller: scrollController,
                     headerSliverBuilder: (context, innerBoxIsScrolled) {
+                      final pinTabs = tabsMode != LibraryBarMode.top;
                       if (topBar) {
                         if (tabStrip == null) return [];
+                        if (!pinTabs) {
+                          return [SliverToBoxAdapter(child: tabStrip)];
+                        }
                         return [
                           SliverPersistentHeader(
                             pinned: true,
@@ -1194,17 +1271,19 @@ class _GroupedLibraryStickySearch extends HookConsumerWidget {
                           SliverPersistentHeader(
                             pinned: true,
                             delegate: _SliverFixedHeaderDelegate(
-                              height: showTabBar && tabs.length > 1
+                              height: showTabBar && tabs.length > 1 && pinTabs
                                   ? 64 + 44
                                   : 64,
                         child: _desktopLibraryHeader(
                           onOpenOrganizer: () =>
                               _openLibraryOrganizer(bodyContext),
                           trailing: trailing,
-                          tabStrip: tabStrip,
+                          tabStrip: pinTabs ? tabStrip : null,
                         ),
                       ),
                     ),
+                    if (!pinTabs && tabStrip != null)
+                      SliverToBoxAdapter(child: tabStrip),
                   ];
                 }
                 return [
@@ -1268,7 +1347,7 @@ class _GroupedLibraryStickySearch extends HookConsumerWidget {
                     grouped: true,
                     header:
                         !desktop && !topBar && showTabBar && tabs.length > 1
-                        ? TabBar(
+                        ? _tabsBar(tabsMode, atTop, TabBar(
                             isScrollable: true,
                             tabs: tabs
                                 .map(
@@ -1277,17 +1356,19 @@ class _GroupedLibraryStickySearch extends HookConsumerWidget {
                                 )
                                 .toList(),
                             dividerColor: Colors.transparent,
-                          )
+                          ))
                         : null,
                     _groupedBody(
                       useTabs: useTabs,
+                      atTop: atTop,
                       sections: _groupSections(tabs),
                       byCategory: false,
                       showCounts: showCounts,
                       tabViews: () => tabs.map((t) {
-                        final content = _GroupedMangaList(
+                        Widget content({Widget? header}) => _GroupedMangaList(
                           key: ValueKey(t.id),
                           tabId: t.id,
+                          header: header,
                         );
                         return showInlineHeaders
                             ? _PagedSection(
@@ -1295,9 +1376,9 @@ class _GroupedLibraryStickySearch extends HookConsumerWidget {
                                 section: (id: t.id, name: t.name),
                                 byCategory: false,
                                 showCount: showCounts,
-                                child: content,
+                                builder: content,
                               )
-                            : content;
+                            : content();
                       }).toList(),
                     ),
                   ),
@@ -1375,56 +1456,38 @@ class _PagedSection extends ConsumerWidget {
     required this.section,
     required this.byCategory,
     required this.showCount,
-    required this.child,
+    required this.builder,
   });
 
   final LibrarySection section;
   final bool byCategory;
   final bool showCount;
-  final Widget child;
+
+  /// Builds the page, scrolling [header] with its entries when given.
+  final Widget Function({Widget? header}) builder;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    var title = section.name;
-    if (showCount) {
-      final listAsync = byCategory
-          ? ref.watch(
-              categoryMangaListWithQueryAndFilterProvider(
-                categoryId: section.id,
-              ),
-            )
-          : ref.watch(
-              groupedMangaListWithQueryAndFilterProvider(tabId: section.id),
-            );
-      final count = listAsync.value?.length;
-      if (count != null) title = '$title ($count)';
-    }
-    return Column(
-      children: [
-        Container(
-          height: 40,
-          width: double.infinity,
-          color: context.theme.colorScheme.surface,
-          alignment: AlignmentDirectional.centerStart,
-          padding: const EdgeInsets.symmetric(horizontal: 8)
-              .onDesktopPageLine(context),
-          child: Text(
-            title,
-            overflow: TextOverflow.ellipsis,
-            style: context.theme.textTheme.titleSmall?.copyWith(
-              color: context.theme.colorScheme.primary,
-            ),
-          ),
-        ),
-        Expanded(child: child),
-      ],
+    final header = LibrarySectionHeader(
+      section: section,
+      byCategory: byCategory,
+      showCount: showCount,
     );
+    return switch (ref.watch(sectionHeadersModeProvider) ??
+        LibraryBarMode.always) {
+      LibraryBarMode.always => Column(
+        children: [header, Expanded(child: builder())],
+      ),
+      LibraryBarMode.top => builder(header: header),
+      LibraryBarMode.never => builder(),
+    };
   }
 }
 
 class _GroupedMangaList extends ConsumerWidget {
-  const _GroupedMangaList({super.key, required this.tabId});
+  const _GroupedMangaList({super.key, required this.tabId, this.header});
   final int tabId;
+  final Widget? header;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -1438,7 +1501,10 @@ class _GroupedMangaList extends ConsumerWidget {
       offlineEscapeHatch: true,
       (data) {
         if (data == null || data.isEmpty) {
-          return Emoticons(title: context.l10n.noCategoryMangaFound);
+          return withLibraryHeader(
+            header,
+            Emoticons(title: context.l10n.noCategoryMangaFound),
+          );
         }
         final items = data;
         return RefreshIndicator(
@@ -1458,6 +1524,7 @@ class _GroupedMangaList extends ConsumerWidget {
           },
           child: LibraryMangaGridView(
             items: items,
+            header: header,
             onOpen: (manga) => MangaRoute(mangaId: manga.id).push(context),
           ),
         );

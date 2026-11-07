@@ -573,6 +573,10 @@ class _GroupColumn extends ConsumerWidget {
         ref.watch(libraryGroupTypeProvider) ?? kDefaultLibraryGroupType;
     final style =
         ref.watch(libraryGroupStyleKeyProvider) ?? LibraryGroupStyle.tabs;
+    final libraryTabsMode =
+        ref.watch(libraryTabsModeProvider) ?? LibraryBarMode.always;
+    final sectionHeadersMode =
+        ref.watch(sectionHeadersModeProvider) ?? LibraryBarMode.always;
     final hasTrackers =
         ref.watch(loggedInTrackersProvider).value?.isNotEmpty ?? false;
     final isGrid =
@@ -647,13 +651,33 @@ class _GroupColumn extends ConsumerWidget {
               ],
             ),
           ),
-          if (style == LibraryGroupStyle.tabs)
-            _PanelCheckRow(
-              title: context.l10n.categoryTabs,
-              provider: categoryTabsProvider,
-              onChanged: ref.read(categoryTabsProvider.notifier).update,
-            )
-          else
+          if (style == LibraryGroupStyle.tabs) ...[
+            FilterSectionHeading(context.l10n.libraryTabBar),
+            RadioGroup<LibraryBarMode>(
+              groupValue: libraryTabsMode,
+              onChanged: (value) =>
+                  ref.read(libraryTabsModeProvider.notifier).update(value),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  for (final mode in LibraryBarMode.values)
+                    _PanelRadioRow<LibraryBarMode>(
+                      value: mode,
+                      onChanged: (next) => ref
+                          .read(libraryTabsModeProvider.notifier)
+                          .update(next),
+                      title: mode.toLocale(context),
+                    ),
+                ],
+              ),
+            ),
+            Text(
+              context.l10n.libraryTabBarHint,
+              style: context.theme.textTheme.bodySmall?.copyWith(
+                color: context.theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ] else ...[
             _PanelCheckRow(
               title: context.l10n.sectionHeadersShowAllCategories,
               provider: sectionHeadersShowAllCategoriesProvider,
@@ -661,6 +685,26 @@ class _GroupColumn extends ConsumerWidget {
                   .read(sectionHeadersShowAllCategoriesProvider.notifier)
                   .update,
             ),
+            FilterSectionHeading(context.l10n.librarySectionHeaders),
+            RadioGroup<LibraryBarMode>(
+              groupValue: sectionHeadersMode,
+              onChanged: (value) =>
+                  ref.read(sectionHeadersModeProvider.notifier).update(value),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  for (final mode in LibraryBarMode.values)
+                    _PanelRadioRow<LibraryBarMode>(
+                      value: mode,
+                      onChanged: (next) => ref
+                          .read(sectionHeadersModeProvider.notifier)
+                          .update(next),
+                      title: mode.toLocale(context),
+                    ),
+                ],
+              ),
+            ),
+          ],
           _PanelCheckRow(
             title: context.l10n.categoryNumberOfItems,
             provider: categoryNumberOfItemsProvider,

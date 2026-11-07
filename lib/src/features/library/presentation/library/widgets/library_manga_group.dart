@@ -25,6 +25,10 @@ class LibraryMangaGroup extends ConsumerWidget {
         ref.watch(libraryGroupTypeProvider) ?? kDefaultLibraryGroupType;
     final style =
         ref.watch(libraryGroupStyleKeyProvider) ?? LibraryGroupStyle.tabs;
+    final libraryTabsMode =
+        ref.watch(libraryTabsModeProvider) ?? LibraryBarMode.always;
+    final sectionHeadersMode =
+        ref.watch(sectionHeadersModeProvider) ?? LibraryBarMode.always;
     final hasTrackers =
         ref.watch(loggedInTrackersProvider).value?.isNotEmpty ?? false;
 
@@ -76,13 +80,28 @@ class LibraryMangaGroup extends ConsumerWidget {
               ],
             ),
           ),
-          if (style == LibraryGroupStyle.tabs)
-            CustomCheckboxListTile(
-              title: context.l10n.categoryTabs,
-              provider: categoryTabsProvider,
-              onChanged: ref.read(categoryTabsProvider.notifier).update,
-            )
-          else
+          if (style == LibraryGroupStyle.tabs) ...[
+            OrganizerHeading(context.l10n.libraryTabBar),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(24, 0, 24, 8),
+              child: Wrap(
+                spacing: 8,
+                runSpacing: 4,
+                children: [
+                  for (final mode in LibraryBarMode.values)
+                    FilterChip(
+                      selected: libraryTabsMode == mode,
+                      showCheckmark: false,
+                      label: Text(mode.toLocale(context)),
+                      onSelected: (_) => ref
+                          .read(libraryTabsModeProvider.notifier)
+                          .update(mode),
+                    ),
+                ],
+              ),
+            ),
+            OrganizerHint(context.l10n.libraryTabBarHint),
+          ] else ...[
             CustomCheckboxListTile(
               title: context.l10n.sectionHeadersShowAllCategories,
               provider: sectionHeadersShowAllCategoriesProvider,
@@ -90,6 +109,26 @@ class LibraryMangaGroup extends ConsumerWidget {
                   .read(sectionHeadersShowAllCategoriesProvider.notifier)
                   .update,
             ),
+            OrganizerHeading(context.l10n.librarySectionHeaders),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(24, 0, 24, 8),
+              child: Wrap(
+                spacing: 8,
+                runSpacing: 4,
+                children: [
+                  for (final mode in LibraryBarMode.values)
+                    FilterChip(
+                      selected: sectionHeadersMode == mode,
+                      showCheckmark: false,
+                      label: Text(mode.toLocale(context)),
+                      onSelected: (_) => ref
+                          .read(sectionHeadersModeProvider.notifier)
+                          .update(mode),
+                    ),
+                ],
+              ),
+            ),
+          ],
           if (current == LibraryGroup.byDefault) ...[
             CustomCheckboxListTile(
               title: context.l10n.showHiddenCategories,

@@ -710,6 +710,29 @@ class SectionHeadersShowAllCategories extends _$SectionHeadersShowAllCategories
 }
 
 @riverpod
+class LibraryTabsMode extends _$LibraryTabsMode
+    with SharedPreferenceEnumClientMixin<LibraryBarMode> {
+  @override
+  LibraryBarMode? build() => initialize(
+    DBKeys.libraryTabsMode,
+    enumList: LibraryBarMode.values,
+    initial: ref.watch(categoryTabsProvider) == false
+        ? LibraryBarMode.never
+        : null,
+  );
+}
+
+@riverpod
+class SectionHeadersMode extends _$SectionHeadersMode
+    with SharedPreferenceEnumClientMixin<LibraryBarMode> {
+  @override
+  LibraryBarMode? build() => initialize(
+    DBKeys.sectionHeadersMode,
+    enumList: LibraryBarMode.values,
+  );
+}
+
+@riverpod
 class ShowHiddenCategories extends _$ShowHiddenCategories
     with SharedPreferenceClientMixin<bool> {
   @override

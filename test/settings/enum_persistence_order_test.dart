@@ -28,6 +28,7 @@ void main() {
       'grid', 'list', 'descriptiveList', 'coverOnly', 'comfortableGrid'
     ],
     'FlashColor': ['black', 'white', 'whiteBlack'],
+    'LibraryBarMode': ['always', 'top', 'never'],
     'GlobalSearchSourceFilter': ['pinned', 'all'],
     'ImageScaleType': [
       'fitScreen', 'stretch', 'fitWidth', 'fitHeight', 'originalSize', 'smartFit'
@@ -72,6 +73,7 @@ void main() {
         ColorFilterBlendMode.values.map((e) => e.name).toList(),
     'DisplayMode': DisplayMode.values.map((e) => e.name).toList(),
     'FlashColor': FlashColor.values.map((e) => e.name).toList(),
+    'LibraryBarMode': LibraryBarMode.values.map((e) => e.name).toList(),
     'GlobalSearchSourceFilter':
         GlobalSearchSourceFilter.values.map((e) => e.name).toList(),
     'ImageScaleType': ImageScaleType.values.map((e) => e.name).toList(),

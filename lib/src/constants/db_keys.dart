@@ -162,10 +162,13 @@ enum DBKeys {
   // 0 selects automatic columns using gridMangaCoverMinWidth.
   libraryPortraitColumns(0),
   libraryLandscapeColumns(0),
-  // Hides only the tab bar; pages remain swipeable.
+  // Former show-tabs switch; libraryTabsMode inherits it until a mode is picked.
   categoryTabs(true),
+  // Hidden tab bars keep their pages swipeable.
+  libraryTabsMode(LibraryBarMode.always),
   // Section headers: true uses one continuous scroll; false uses a page per section.
   sectionHeadersShowAllCategories(false),
+  sectionHeadersMode(LibraryBarMode.always),
   showHiddenCategories(false),
   showEmptyCategoriesSearch(false),
   categoryNumberOfItems(false),
