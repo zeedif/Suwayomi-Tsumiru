@@ -18,6 +18,7 @@ import '../../../domain/library_group.dart';
 import '../../../domain/track_status.dart';
 import '../../category/controller/edit_category_controller.dart';
 import 'library_manga_list.dart';
+import 'library_section_order.dart';
 
 part 'library_grouping.g.dart';
 
@@ -56,7 +57,8 @@ CategoryProxy categoryToProxy(CategoryDto c) => (id: c.id, name: c.name);
 
 
 /// Tab ID is the category ID, status rank, or zero for other groups.
-typedef GroupedTab = ({int id, String name, List<int> mangaIds});
+/// Key names the group across sessions: category or source ID, status, tag or language.
+typedef GroupedTab = ({int id, String key, String name, List<int> mangaIds});
 
 
 List<GroupedTab> groupLibrary(
@@ -82,7 +84,9 @@ List<GroupedTab> groupLibrary(
       return _groupByLanguage(all);
 
     case LibraryGroup.ungrouped:
-      return [(id: 0, name: 'All', mangaIds: all.map((m) => m.id).toList())];
+      return [
+        (id: 0, key: '', name: 'All', mangaIds: all.map((m) => m.id).toList()),
+      ];
 
     case LibraryGroup.byDefault:
     default:
@@ -115,11 +119,17 @@ List<GroupedTab> _groupByDefault(
         buckets[defaultCategoryId]!.isNotEmpty)
       (
         id: defaultCategoryId,
+        key: '$defaultCategoryId',
         name: 'Default',
         mangaIds: buckets[defaultCategoryId]!,
       ),
     for (final category in categories)
-      (id: category.id, name: category.name, mangaIds: buckets[category.id]!),
+      (
+        id: category.id,
+        key: '${category.id}',
+        name: category.name,
+        mangaIds: buckets[category.id]!,
+      ),
   ];
 }
 
@@ -155,6 +165,7 @@ List<GroupedTab> _groupBySource(List<MangaProxy> all) {
         : e.value.name;
     return (
       id: int.tryParse(e.key) ?? e.key.hashCode,
+      key: e.key,
       name: label,
       mangaIds: e.value.mangaIds,
     );
@@ -175,6 +186,7 @@ List<GroupedTab> _groupByStatus(List<MangaProxy> all) {
       .map(
         (e) => (
           id: statusOrder[e.key] ?? 7,
+          key: e.key,
           name: _statusLabel(e.key),
           mangaIds: e.value,
         ),
@@ -227,11 +239,12 @@ List<GroupedTab> _groupByTag(List<MangaProxy> all) {
     for (final e in sorted)
       (
         id: _nameId('tag', e.key),
+        key: e.key,
         name: e.value.display,
         mangaIds: e.value.mangaIds,
       ),
     if (untagged.isNotEmpty)
-      (id: _kNoTagId, name: 'Untagged', mangaIds: untagged),
+      (id: _kNoTagId, key: '', name: 'Untagged', mangaIds: untagged),
   ];
 }
 
@@ -261,6 +274,7 @@ List<GroupedTab> _groupByLanguage(List<MangaProxy> all) {
     for (final e in sorted)
       (
         id: _nameId('lang', e.key),
+        key: e.key,
         name: [
           languageFlagEmoji(e.key),
           languageDisplayName(e.key),
@@ -268,7 +282,7 @@ List<GroupedTab> _groupByLanguage(List<MangaProxy> all) {
         mangaIds: e.value,
       ),
     if (unknown.isNotEmpty)
-      (id: _kNoLanguageId, name: 'Local source', mangaIds: unknown),
+      (id: _kNoLanguageId, key: '', name: 'Local source', mangaIds: unknown),
   ];
 }
 
@@ -295,7 +309,12 @@ List<GroupedTab> _groupByTrackStatus(List<MangaProxy> all) {
 
   return sorted
       .map(
-        (e) => (id: e.key.index + 1, name: e.key.label, mangaIds: e.value),
+        (e) => (
+          id: e.key.index + 1,
+          key: e.key.name,
+          name: e.key.label,
+          mangaIds: e.value,
+        ),
       )
       .toList();
 }
@@ -324,8 +343,17 @@ class LibraryVisibleSection extends _$LibraryVisibleSection
   int? build() => null;
 }
 
+/// Groups in the order the user arranged them.
 @riverpod
 Future<List<GroupedTab>> libraryGroupedTabs(Ref ref) async {
+  final order = ref.watch(librarySectionOrderProvider);
+  final tabs = ref.watch(libraryNaturalTabsProvider.future);
+  return applySectionOrder(await tabs, order);
+}
+
+/// Groups in their built-in order.
+@riverpod
+Future<List<GroupedTab>> libraryNaturalTabs(Ref ref) async {
   // Watch dependencies before awaiting so auto-dispose subscriptions survive rebuilds.
   final groupType =
       ref.watch(libraryGroupTypeProvider) ?? kDefaultLibraryGroupType;

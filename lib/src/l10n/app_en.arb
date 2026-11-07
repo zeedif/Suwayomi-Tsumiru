@@ -1969,6 +1969,10 @@
   "@groupByLanguage": {
     "description": "Group mode: one tab per source language"
   },
+  "groupOrder": "Group order",
+  "@groupOrder": {
+    "description": "Library Group section heading above the draggable list that orders the groups of the active grouping, other than categories"
+  },
   "downloadAllChapters": "All",
   "@downloadAllChapters": {
     "description": "Bulk-download menu item: queue every not-yet-downloaded chapter."

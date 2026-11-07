@@ -24,7 +24,7 @@ import '../controller/library_grouping.dart';
 import '../controller/library_manga_list.dart';
 import 'library_manga_grid_view.dart';
 
-typedef LibrarySection = ({int id, String name});
+typedef LibrarySection = ({int id, String key, String name});
 
 /// Writes libraryVisibleSectionProvider from scroll position; never drives scrolling from it.
 class LibrarySectionsView extends HookConsumerWidget {

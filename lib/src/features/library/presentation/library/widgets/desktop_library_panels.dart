@@ -22,6 +22,7 @@ import '../controller/library_grouping.dart';
 import 'library_filter_content.dart';
 import 'library_filter_segments.dart';
 import 'library_manga_badges.dart';
+import 'library_section_order_list.dart';
 
 /// Aligns below the anchor's right edge, clamped to an 8 px overlay margin.
 class _LibraryPanelLayout extends SingleChildLayoutDelegate {
@@ -666,6 +667,10 @@ class _GroupColumn extends ConsumerWidget {
             provider: categoryNumberOfItemsProvider,
             onChanged: ref.read(categoryNumberOfItemsProvider.notifier).update,
           ),
+          if (current != LibraryGroup.byDefault) ...[
+            FilterSectionHeading(context.l10n.groupOrder),
+            const LibrarySectionOrderList(),
+          ],
           if (current == LibraryGroup.byDefault) ...[
             _PanelCheckRow(
               title: context.l10n.showHiddenCategories,

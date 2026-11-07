@@ -15,6 +15,7 @@ import '../../../../tracking/data/tracker_repository.dart';
 import '../../../domain/library_group.dart';
 import '../controller/library_controller.dart';
 import '../controller/library_grouping.dart';
+import 'library_section_order_list.dart';
 
 class LibraryMangaGroup extends ConsumerWidget {
   const LibraryMangaGroup({super.key});
@@ -109,6 +110,10 @@ class LibraryMangaGroup extends ConsumerWidget {
             provider: categoryNumberOfItemsProvider,
             onChanged: ref.read(categoryNumberOfItemsProvider.notifier).update,
           ),
+          if (current != LibraryGroup.byDefault) ...[
+            OrganizerHeading(context.l10n.groupOrder),
+            const LibrarySectionOrderList(),
+          ],
         ],
       ],
     );

@@ -115,4 +115,56 @@ void main() {
       expect(tabWithCat2.mangaIds, contains(99));
     });
   });
+
+  test('keys groups by names that survive regrouping', () {
+    MangaProxy manga(
+      int id, {
+      required String sourceId,
+      required String lang,
+      required String status,
+      List<String> tags = const [],
+    }) => (
+      id: id,
+      sourceId: sourceId,
+      sourceName: 'Source $sourceId',
+      sourceLang: lang,
+      status: status,
+      categoryIds: const [],
+      trackStatuses: const [],
+      tags: tags,
+    );
+    final mangas = [
+      manga(
+        1,
+        sourceId: '123',
+        lang: 'ja',
+        status: 'COMPLETED',
+        tags: ['Drama'],
+      ),
+      manga(2, sourceId: 'src1', lang: 'localsourcelang', status: 'BOGUS'),
+    ];
+    List<String> keys(int type) =>
+        groupLibrary(mangas, type, const []).map((t) => t.key).toList();
+
+    expect(keys(LibraryGroup.bySource), ['src1', '123']);
+    expect(keys(LibraryGroup.byStatus), ['COMPLETED', 'UNKNOWN']);
+    expect(keys(LibraryGroup.byTag), ['drama', '']);
+    expect(keys(LibraryGroup.byLanguage), ['ja', '']);
+    expect(
+      groupLibrary(
+        [_proxy(_Manga(id: 3), trackStatuses: [(trackerId: 2, status: 5)])],
+        LibraryGroup.byTrackStatus,
+        const [],
+      ).map((t) => t.key),
+      ['planToRead'],
+    );
+    expect(
+      groupLibrary(
+        [_proxy(_Manga(id: 4))],
+        LibraryGroup.byDefault,
+        [_catProxy(const _Category(id: 7, name: 'Seven'))],
+      ).map((t) => t.key),
+      ['0', '7'],
+    );
+  });
 }

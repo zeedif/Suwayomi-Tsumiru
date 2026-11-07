@@ -73,11 +73,15 @@ Widget _libraryBody(
 
 List<LibrarySection> _categorySections(List<CategoryDto> categories) => [
   for (final c in categories)
-    (id: c.id.getValueOnNullOrNegative(), name: c.name),
+    (
+      id: c.id.getValueOnNullOrNegative(),
+      key: '${c.id.getValueOnNullOrNegative()}',
+      name: c.name,
+    ),
 ];
 
 List<LibrarySection> _groupSections(List<GroupedTab> tabs) => [
-  for (final t in tabs) (id: t.id, name: t.name),
+  for (final t in tabs) (id: t.id, key: t.key, name: t.name),
 ];
 
 bool _useTabs(LibraryGroupStyle style, bool showAllCategories) =>
@@ -531,7 +535,7 @@ class _DefaultLibraryToggledSearch extends HookConsumerWidget {
                     return showInlineHeaders
                         ? _PagedSection(
                             key: ValueKey(id),
-                            section: (id: id, name: e.name),
+                            section: (id: id, key: '$id', name: e.name),
                             byCategory: true,
                             showCount: showCounts,
                             child: content,
@@ -784,7 +788,7 @@ class _DefaultLibraryStickySearch extends HookConsumerWidget {
                         return showInlineHeaders
                             ? _PagedSection(
                                 key: ValueKey(id),
-                                section: (id: id, name: e.name),
+                                section: (id: id, key: '$id', name: e.name),
                                 byCategory: true,
                                 showCount: showCounts,
                                 child: content,
@@ -1048,7 +1052,7 @@ class _GroupedLibraryToggledSearch extends HookConsumerWidget {
                   return showInlineHeaders
                       ? _PagedSection(
                           key: ValueKey(t.id),
-                          section: (id: t.id, name: t.name),
+                          section: (id: t.id, key: t.key, name: t.name),
                           byCategory: false,
                           showCount: showCounts,
                           child: content,
@@ -1292,7 +1296,7 @@ class _GroupedLibraryStickySearch extends HookConsumerWidget {
                         return showInlineHeaders
                             ? _PagedSection(
                                 key: ValueKey(t.id),
-                                section: (id: t.id, name: t.name),
+                                section: (id: t.id, key: t.key, name: t.name),
                                 byCategory: false,
                                 showCount: showCounts,
                                 child: content,
