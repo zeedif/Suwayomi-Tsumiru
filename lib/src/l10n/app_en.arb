@@ -1501,6 +1501,10 @@
   "@sectionHeadersShowAllCategories": {
     "description": "Library Group checkbox to scroll all sections together in Section headers mode"
   },
+  "alwaysShowCurrentCategory": "Always show current category",
+  "@alwaysShowCurrentCategory": {
+    "description": "Library Group checkbox under Show all categories: keep the section on screen named under the Library title; off names it only for a moment after it changes"
+  },
   "showHiddenCategories": "Show hidden categories",
   "@showHiddenCategories": {
     "description": "Library Display > Tabs: checkbox to include categories marked as hidden in the tab bar"

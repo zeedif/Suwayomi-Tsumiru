@@ -166,6 +166,8 @@ enum DBKeys {
   categoryTabs(true),
   // Section headers: true uses one continuous scroll; false uses a page per section.
   sectionHeadersShowAllCategories(false),
+  // Off, the title names the section on screen only briefly after it changes.
+  alwaysShowCurrentCategory(true),
   showHiddenCategories(false),
   showEmptyCategoriesSearch(false),
   categoryNumberOfItems(false),

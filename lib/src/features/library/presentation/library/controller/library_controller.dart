@@ -710,6 +710,13 @@ class SectionHeadersShowAllCategories extends _$SectionHeadersShowAllCategories
 }
 
 @riverpod
+class AlwaysShowCurrentCategory extends _$AlwaysShowCurrentCategory
+    with SharedPreferenceClientMixin<bool> {
+  @override
+  bool? build() => initialize(DBKeys.alwaysShowCurrentCategory);
+}
+
+@riverpod
 class ShowHiddenCategories extends _$ShowHiddenCategories
     with SharedPreferenceClientMixin<bool> {
   @override

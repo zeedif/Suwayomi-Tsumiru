@@ -82,7 +82,7 @@ class LibraryMangaGroup extends ConsumerWidget {
               provider: categoryTabsProvider,
               onChanged: ref.read(categoryTabsProvider.notifier).update,
             )
-          else
+          else ...[
             CustomCheckboxListTile(
               title: context.l10n.sectionHeadersShowAllCategories,
               provider: sectionHeadersShowAllCategoriesProvider,
@@ -90,6 +90,15 @@ class LibraryMangaGroup extends ConsumerWidget {
                   .read(sectionHeadersShowAllCategoriesProvider.notifier)
                   .update,
             ),
+            if (ref.watch(sectionHeadersShowAllCategoriesProvider) ?? false)
+              CustomCheckboxListTile(
+                title: context.l10n.alwaysShowCurrentCategory,
+                provider: alwaysShowCurrentCategoryProvider,
+                onChanged: ref
+                    .read(alwaysShowCurrentCategoryProvider.notifier)
+                    .update,
+              ),
+          ],
           if (current == LibraryGroup.byDefault) ...[
             CustomCheckboxListTile(
               title: context.l10n.showHiddenCategories,

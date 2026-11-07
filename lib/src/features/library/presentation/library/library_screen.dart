@@ -1471,7 +1471,7 @@ class _GroupedMangaList extends ConsumerWidget {
   }
 }
 
-class _LibraryTitle extends ConsumerWidget {
+class _LibraryTitle extends HookConsumerWidget {
   const _LibraryTitle({required this.sections});
   final List<LibrarySection> sections;
 
@@ -1487,25 +1487,47 @@ class _LibraryTitle extends ConsumerWidget {
     final visibleName = isSectionHeaders && sections.length > 1
         ? sections.firstWhereOrNull((s) => s.id == visibleId)?.name
         : null;
+    final always = ref.watch(alwaysShowCurrentCategoryProvider).ifNull(true);
+    // Without it, a section that scrolls in is named for a moment, as in Yokai.
+    final flashing = useState(false);
+    final previous = useRef(visibleName);
+    useEffect(() {
+      final changed = previous.value != null && previous.value != visibleName;
+      previous.value = visibleName;
+      if (always || !changed || visibleName == null) return null;
+      flashing.value = true;
+      final timer = Timer(
+        const Duration(seconds: 2),
+        () => flashing.value = false,
+      );
+      return timer.cancel;
+    }, [visibleName, always]);
 
     final title = Text(context.l10n.library);
     if (visibleName == null) return title;
 
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        title,
-        Text(
-          visibleName,
-          overflow: TextOverflow.ellipsis,
-          style: context.theme.textTheme.bodySmall?.copyWith(
-            color: context.theme.appBarTheme.foregroundColor?.withValues(
-              alpha: .7,
+    return AnimatedSize(
+      duration: context.reduceMotion
+          ? Duration.zero
+          : const Duration(milliseconds: 200),
+      alignment: AlignmentDirectional.centerStart,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          title,
+          if (always || flashing.value)
+            Text(
+              visibleName,
+              overflow: TextOverflow.ellipsis,
+              style: context.theme.textTheme.bodySmall?.copyWith(
+                color: context.theme.appBarTheme.foregroundColor?.withValues(
+                  alpha: .7,
+                ),
+              ),
             ),
-          ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }
