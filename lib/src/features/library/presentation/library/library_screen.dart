@@ -1369,7 +1369,7 @@ class _GroupTab extends ConsumerWidget {
   }
 }
 
-class _PagedSection extends ConsumerWidget {
+class _PagedSection extends StatelessWidget {
   const _PagedSection({
     super.key,
     required this.section,
@@ -1384,42 +1384,16 @@ class _PagedSection extends ConsumerWidget {
   final Widget child;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    var title = section.name;
-    if (showCount) {
-      final listAsync = byCategory
-          ? ref.watch(
-              categoryMangaListWithQueryAndFilterProvider(
-                categoryId: section.id,
-              ),
-            )
-          : ref.watch(
-              groupedMangaListWithQueryAndFilterProvider(tabId: section.id),
-            );
-      final count = listAsync.value?.length;
-      if (count != null) title = '$title ($count)';
-    }
-    return Column(
-      children: [
-        Container(
-          height: 40,
-          width: double.infinity,
-          color: context.theme.colorScheme.surface,
-          alignment: AlignmentDirectional.centerStart,
-          padding: const EdgeInsets.symmetric(horizontal: 8)
-              .onDesktopPageLine(context),
-          child: Text(
-            title,
-            overflow: TextOverflow.ellipsis,
-            style: context.theme.textTheme.titleSmall?.copyWith(
-              color: context.theme.colorScheme.primary,
-            ),
-          ),
-        ),
-        Expanded(child: child),
-      ],
-    );
-  }
+  Widget build(BuildContext context) => Column(
+    children: [
+      LibrarySectionHeader(
+        section: section,
+        byCategory: byCategory,
+        showCount: showCount,
+      ),
+      Expanded(child: child),
+    ],
+  );
 }
 
 class _GroupedMangaList extends ConsumerWidget {
