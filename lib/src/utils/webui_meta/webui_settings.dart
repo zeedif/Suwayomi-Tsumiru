@@ -15,6 +15,12 @@ class WebUiSettings extends AsyncNotifier<Map<String, String>> {
   Future<Map<String, String>> build() =>
       WebUiMetaRepository(ref.watch(graphQlClientProvider)).readGlobalMetas();
 
+  /// Mirrors a raw meta written outside [write] into the cached map.
+  void remember(String key, String value) {
+    final metas = state.value;
+    if (metas != null) state = AsyncData({...metas, key: value});
+  }
+
   Future<void> write(String key, String value) async {
     final metas = await future;
     await WebUiMetaRepository(
