@@ -20,6 +20,7 @@ import '../../category/controller/edit_category_controller.dart';
 import 'library_controller.dart';
 import 'library_grouping.dart';
 import 'library_manga_list.dart';
+import 'library_section_sort.dart';
 
 part 'category_library_options.g.dart';
 
@@ -512,12 +513,15 @@ class ActiveLibraryOptions extends _$ActiveLibraryOptions {
   void sort(MangaSort value) {
     if (!_write('sortBy', CategoryLibraryOptions(sort: value))) {
       ref.read(libraryMangaSortProvider.notifier).update(value);
+      // The library sort applies to every section, including sorted ones.
+      ref.read(librarySectionSortsProvider.notifier).clear();
     }
   }
 
   void ascending(bool value) {
     if (!_write('sortDesc', CategoryLibraryOptions(ascending: value))) {
       ref.read(libraryMangaSortDirectionProvider.notifier).update(value);
+      ref.read(librarySectionSortsProvider.notifier).clear();
     }
   }
 

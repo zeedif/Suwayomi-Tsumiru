@@ -31,6 +31,7 @@ import '../../category/controller/edit_category_controller.dart';
 import 'category_library_options.dart';
 import 'library_grouping.dart';
 import 'library_manga_list.dart';
+import 'library_section_sort.dart';
 
 part 'library_controller.g.dart';
 
@@ -337,9 +338,15 @@ class CategoryMangaListWithQueryAndFilter
     final filterTagsExclude =
         (ref.watch(libraryFilterTagsExcludeProvider) ?? const <String>[])
             .toSet();
-    final MangaSort sortedBy =
-        options.sort!;
-    final sortedDirection = options.ascending!;
+    final sectionSort = ref.watch(
+      librarySectionSortProvider(
+        id: categoryId,
+        key: '$categoryId',
+        byCategory: true,
+      ),
+    );
+    final MangaSort sortedBy = sectionSort.sort;
+    final sortedDirection = sectionSort.ascending;
     final seed =
         ref.watch(librarySortRandomSeedProvider) ??
         DBKeys.librarySortRandomSeed.initial as int;
@@ -738,10 +745,12 @@ class GroupedMangaListWithQueryAndFilter
     // Key by stable tab id: freshly built Sets lack value equality and would recreate providers.
     final tabs = ref.watch(libraryGroupedTabsProvider).value;
     Set<int> mangaIds = const <int>{};
+    String? key;
     if (tabs != null) {
       for (final t in tabs) {
         if (t.id == tabId) {
           mangaIds = t.mangaIds.toSet();
+          key = t.key;
           break;
         }
       }
@@ -777,11 +786,18 @@ class GroupedMangaListWithQueryAndFilter
     final filterTagsExclude =
         (ref.watch(libraryFilterTagsExcludeProvider) ?? const <String>[])
             .toSet();
+    final groupSort = key == null
+        ? null
+        : ref.watch(
+            librarySectionSortProvider(id: tabId, key: key, byCategory: false),
+          );
     final MangaSort sortedBy =
-        ref.watch(libraryMangaSortProvider) ?? DBKeys.mangaSort.initial;
-    final sortedDirection = ref
-        .watch(libraryMangaSortDirectionProvider)
-        .ifNull(true);
+        groupSort?.sort ??
+        ref.watch(libraryMangaSortProvider) ??
+        DBKeys.mangaSort.initial;
+    final sortedDirection =
+        groupSort?.ascending ??
+        ref.watch(libraryMangaSortDirectionProvider).ifNull(true);
     final seed =
         ref.watch(librarySortRandomSeedProvider) ??
         DBKeys.librarySortRandomSeed.initial as int;

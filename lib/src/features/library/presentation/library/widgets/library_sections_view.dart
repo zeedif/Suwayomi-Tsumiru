@@ -6,25 +6,42 @@
 
 import 'dart:async';
 
+import 'package:fluentui_system_icons/fluentui_system_icons.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
 
+import '../../../../../constants/db_keys.dart';
+import '../../../../../constants/enum.dart';
 import '../../../../../routes/router_config.dart';
 import '../../../../../utils/extensions/custom_extensions.dart';
 import '../../../../../widgets/desktop/desktop_page_frame.dart';
 import '../../../../../widgets/emoticons.dart';
 import '../../../../../widgets/shell/update_banner_state.dart';
 import '../../../../manga_book/data/updates/updates_repository.dart';
+import '../../../../manga_book/domain/manga/manga_model.dart';
 import '../../../../offline/data/server_reachability.dart';
+import '../../../../tracking/data/tracker_repository.dart';
 import '../controller/category_library_options.dart';
 import '../controller/library_controller.dart';
 import '../controller/library_grouping.dart';
 import '../controller/library_manga_list.dart';
+import '../controller/library_section_sort.dart';
 import 'library_manga_grid_view.dart';
+import 'library_manga_organizer.dart';
 
-typedef LibrarySection = ({int id, String name});
+typedef LibrarySection = ({int id, String key, String name});
+
+AsyncValue<List<MangaDto>?> watchLibrarySection(
+  WidgetRef ref,
+  LibrarySection section, {
+  required bool byCategory,
+}) => byCategory
+    ? ref.watch(
+        categoryMangaListWithQueryAndFilterProvider(categoryId: section.id),
+      )
+    : ref.watch(groupedMangaListWithQueryAndFilterProvider(tabId: section.id));
 
 /// Writes libraryVisibleSectionProvider from scroll position; never drives scrolling from it.
 class LibrarySectionsView extends HookConsumerWidget {
@@ -148,13 +165,7 @@ class _Section extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final listAsync = byCategory
-        ? ref.watch(
-            categoryMangaListWithQueryAndFilterProvider(categoryId: section.id),
-          )
-        : ref.watch(
-            groupedMangaListWithQueryAndFilterProvider(tabId: section.id),
-          );
+    final listAsync = watchLibrarySection(ref, section, byCategory: byCategory);
     final items = listAsync.value ?? const [];
     final showEmpty =
         byCategory &&
@@ -171,12 +182,9 @@ class _Section extends ConsumerWidget {
           pinned: true,
           delegate: _SectionHeaderDelegate(
             headerKey: headerKey,
-            title: showCount
-                ? '${section.name} (${items.length})'
-                : section.name,
-            // Opaque headers hide rows scrolling underneath.
-            background: context.theme.colorScheme.surface,
-            foreground: context.theme.colorScheme.primary,
+            section: section,
+            byCategory: byCategory,
+            showCount: showCount,
           ),
         ),
         if (items.isEmpty)
@@ -202,23 +210,21 @@ class _Section extends ConsumerWidget {
 class _SectionHeaderDelegate extends SliverPersistentHeaderDelegate {
   _SectionHeaderDelegate({
     required this.headerKey,
-    required this.title,
-    required this.background,
-    required this.foreground,
+    required this.section,
+    required this.byCategory,
+    required this.showCount,
   });
 
   final GlobalKey headerKey;
-  final String title;
-  final Color background;
-  final Color foreground;
-
-  static const _height = 40.0;
+  final LibrarySection section;
+  final bool byCategory;
+  final bool showCount;
 
   @override
-  double get minExtent => _height;
+  double get minExtent => LibrarySectionHeader.height;
 
   @override
-  double get maxExtent => _height;
+  double get maxExtent => LibrarySectionHeader.height;
 
   @override
   Widget build(
@@ -226,24 +232,147 @@ class _SectionHeaderDelegate extends SliverPersistentHeaderDelegate {
     double shrinkOffset,
     bool overlapsContent,
   ) {
-    return Container(
+    return LibrarySectionHeader(
       key: headerKey,
-      height: _height,
-      color: background,
-      alignment: AlignmentDirectional.centerStart,
-      padding: const EdgeInsets.symmetric(horizontal: 8)
-          .onDesktopPageLine(context),
-      child: Text(
-        title,
-        overflow: TextOverflow.ellipsis,
-        style: context.theme.textTheme.titleSmall?.copyWith(color: foreground),
-      ),
+      section: section,
+      byCategory: byCategory,
+      showCount: showCount,
     );
   }
 
   @override
   bool shouldRebuild(_SectionHeaderDelegate old) =>
-      old.title != title ||
-      old.background != background ||
-      old.foreground != foreground;
+      old.section != section ||
+      old.byCategory != byCategory ||
+      old.showCount != showCount;
+}
+
+/// Title row shared by the continuous and paged section layouts.
+class LibrarySectionHeader extends ConsumerWidget {
+  const LibrarySectionHeader({
+    super.key,
+    required this.section,
+    required this.byCategory,
+    required this.showCount,
+  });
+
+  static const height = 40.0;
+
+  final LibrarySection section;
+  final bool byCategory;
+  final bool showCount;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final count = showCount
+        ? watchLibrarySection(ref, section, byCategory: byCategory)
+              .value
+              ?.length
+        : null;
+    return Container(
+      height: height,
+      width: double.infinity,
+      // Opaque headers hide rows scrolling underneath.
+      color: context.theme.colorScheme.surface,
+      alignment: AlignmentDirectional.centerStart,
+      padding: const EdgeInsets.symmetric(horizontal: 8)
+          .onDesktopPageLine(context),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              count == null ? section.name : '${section.name} ($count)',
+              overflow: TextOverflow.ellipsis,
+              style: context.theme.textTheme.titleSmall?.copyWith(
+                color: context.theme.colorScheme.primary,
+              ),
+            ),
+          ),
+          _SectionSortButton(section: section, byCategory: byCategory),
+        ],
+      ),
+    );
+  }
+}
+
+/// Picks the sort of one section; picking the current sort flips its direction.
+class _SectionSortButton extends ConsumerWidget {
+  const _SectionSortButton({required this.section, required this.byCategory});
+
+  final LibrarySection section;
+  final bool byCategory;
+
+  static IconData _icon(SectionSort value) => value.sort == MangaSort.random
+      ? FluentIcons.arrow_shuffle_24_regular
+      : value.ascending
+      ? FluentIcons.arrow_sort_up_24_regular
+      : FluentIcons.arrow_sort_down_24_regular;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final provider = librarySectionSortProvider(
+      id: section.id,
+      key: section.key,
+      byCategory: byCategory,
+    );
+    final current = ref.watch(provider);
+    final hasTrackers =
+        ref.watch(loggedInTrackersProvider).value?.isNotEmpty ?? false;
+    // Categories shared with WebUI only store the sorts it knows.
+    final webUiSorts =
+        byCategory && ref.watch(useCategoryLibraryOptionsProvider);
+    final primary = context.theme.colorScheme.primary;
+    return PopupMenuButton<MangaSort>(
+      tooltip: context.l10n.sort,
+      position: PopupMenuPosition.under,
+      onSelected: (sort) {
+        if (sort != current.sort) {
+          ref.read(provider.notifier).update(sort: sort);
+        } else if (sort == MangaSort.random) {
+          final seed =
+              ref.read(librarySortRandomSeedProvider) ??
+              DBKeys.librarySortRandomSeed.initial as int;
+          ref.read(librarySortRandomSeedProvider.notifier).update(seed + 1);
+        } else {
+          ref.read(provider.notifier).update(ascending: !current.ascending);
+        }
+      },
+      itemBuilder: (context) => [
+        for (final sort in librarySortDisplayOrder)
+          if ((sort != MangaSort.trackerScore || hasTrackers) &&
+              (!webUiSorts || categorySortModes.containsKey(sort)))
+            PopupMenuItem(
+              value: sort,
+              child: Row(
+                children: [
+                  SizedBox(
+                    width: 24,
+                    child: sort == current.sort
+                        ? Icon(_icon(current), size: 20, color: primary)
+                        : null,
+                  ),
+                  const SizedBox(width: 12),
+                  Flexible(child: Text(sort.toLocale(context))),
+                ],
+              ),
+            ),
+      ],
+      child: Padding(
+        padding: const EdgeInsetsDirectional.only(start: 8),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              current.sort.toLocale(context),
+              style: context.theme.textTheme.labelMedium?.copyWith(
+                color: primary,
+              ),
+            ),
+            const SizedBox(width: 4),
+            Icon(_icon(current), size: 16, color: primary),
+          ],
+        ),
+      ),
+    );
+  }
 }
