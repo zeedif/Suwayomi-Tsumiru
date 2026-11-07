@@ -115,4 +115,40 @@ void main() {
       expect(tabWithCat2.mangaIds, contains(99));
     });
   });
+
+  group('entries whose extension was uninstalled', () {
+    MangaProxy manga(int id, String sourceId, String name, String lang) => (
+      id: id,
+      sourceId: sourceId,
+      sourceName: name,
+      sourceLang: lang,
+      status: 'ONGOING',
+      categoryIds: const [],
+      trackStatuses: const [],
+      tags: const [],
+    );
+    final mangas = [
+      manga(1, '0', 'Local source', 'localsourcelang'),
+      manga(2, '2499283573021220255', '', ''),
+      manga(3, '123', 'MangaDex', 'en'),
+    ];
+
+    test('are grouped under their source id', () {
+      expect(
+        groupLibrary(mangas, LibraryGroup.bySource, []).map((t) => t.name),
+        ['2499283573021220255', 'Local source', 'MangaDex'],
+      );
+    });
+
+    test('get their own language group apart from local entries', () {
+      final tabs = groupLibrary(mangas, LibraryGroup.byLanguage, []);
+      expect(
+        {for (final tab in tabs.skip(1)) tab.name: tab.mangaIds},
+        {
+          'Local source': [1],
+          'Unknown': [2],
+        },
+      );
+    });
+  });
 }

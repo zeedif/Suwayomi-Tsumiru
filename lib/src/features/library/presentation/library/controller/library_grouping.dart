@@ -128,8 +128,11 @@ List<GroupedTab> _groupBySource(List<MangaProxy> all) {
       {};
   for (final m in all) {
     final sid = m.sourceId;
+    // Uninstalling an extension deletes its sources; its entries keep the id.
     final name = m.sourceLang == kLocalSourceLang
         ? 'Local source'
+        : m.sourceName.isEmpty
+        ? sid
         : m.sourceName;
     final entry = buckets.putIfAbsent(
       sid,
@@ -198,6 +201,7 @@ int _nameId(String prefix, String name) => Object.hash(prefix, name);
 /// Negative sentinel IDs cannot collide with real category or status IDs.
 const int _kNoTagId = -101;
 const int _kNoLanguageId = -102;
+const int _kUnknownLanguageId = -103;
 
 List<GroupedTab> _groupByTag(List<MangaProxy> all) {
   // Fan out by case-insensitive tag, preserving first-seen display casing.
@@ -238,11 +242,15 @@ List<GroupedTab> _groupByTag(List<MangaProxy> all) {
 List<GroupedTab> _groupByLanguage(List<MangaProxy> all) {
   // Local-source entries have no real language and need their own trailing bucket.
   final Map<String, List<int>> buckets = {};
+  final List<int> local = [];
+  // Entries whose source was uninstalled no longer report a language.
   final List<int> unknown = [];
 
   for (final m in all) {
     final lang = m.sourceLang.trim().toLowerCase();
-    if (lang.isEmpty || lang == kLocalSourceLang) {
+    if (lang == kLocalSourceLang) {
+      local.add(m.id);
+    } else if (lang.isEmpty) {
       unknown.add(m.id);
     } else {
       buckets.putIfAbsent(lang, () => []).add(m.id);
@@ -267,8 +275,10 @@ List<GroupedTab> _groupByLanguage(List<MangaProxy> all) {
         ].whereType<String>().join(' '),
         mangaIds: e.value,
       ),
+    if (local.isNotEmpty)
+      (id: _kNoLanguageId, name: 'Local source', mangaIds: local),
     if (unknown.isNotEmpty)
-      (id: _kNoLanguageId, name: 'Local source', mangaIds: unknown),
+      (id: _kUnknownLanguageId, name: 'Unknown', mangaIds: unknown),
   ];
 }
 
