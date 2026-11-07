@@ -2371,6 +2371,18 @@
     }
   },
   "opds": "OPDS",
+  "opdsFeedAddress": "Feed address",
+  "@opdsFeedAddress": {
+    "description": "OPDS settings: row showing the catalog URL to add in an OPDS reader; tapping copies it"
+  },
+  "opdsFeedSignIn": "Readers sign in with the server username and password",
+  "@opdsFeedSignIn": {
+    "description": "OPDS feed address hint when the server uses Basic auth or Simple Login"
+  },
+  "opdsFeedSignInMainAccount": "Readers sign in with the username and password from the server's settings, and see the first account's library",
+  "@opdsFeedSignInMainAccount": {
+    "description": "OPDS feed address hint for UI Login servers: OPDS readers only support Basic auth, which the server maps to its first account"
+  },
   "opdsBinaryFileSize": "Binary file size",
   "opdsBinaryFileSizeDescription": "Display file sizes in binary (KiB, MiB, GiB) instead of decimal (KB, MB, GB)",
   "opdsItemsPerPage": "Items per page",

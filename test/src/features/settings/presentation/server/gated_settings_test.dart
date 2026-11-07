@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:graphql/client.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:tsumiru/src/features/account/data/account_permission.dart';
 import 'package:tsumiru/src/features/account/data/account_providers.dart';
 import 'package:tsumiru/src/features/account/data/graphql/__generated__/account.graphql.dart';
@@ -139,9 +140,12 @@ void main() {
       ),
     ]) {
       testWidgets(scenario.name, (tester) async {
+        SharedPreferences.setMockInitialValues({});
+        final prefs = await SharedPreferences.getInstance();
         await tester.pumpWidget(
           ProviderScope(
             overrides: [
+              sharedPreferencesProvider.overrideWithValue(prefs),
               graphQlClientProvider.overrideWithValue(
                 GraphQLClient(
                   link: _UndefinedFieldLink(),
@@ -209,9 +213,15 @@ void main() {
             reason: tile.title,
           );
         }
-        final tiles = tester.widgetList<ListTile>(
-          find.descendant(of: opds, matching: find.byType(ListTile)),
-        );
+        // The feed address only copies a link, whatever the permissions.
+        final feedAddress = AppLocalizations.of(
+          tester.element(opds),
+        )!.opdsFeedAddress;
+        final tiles = tester
+            .widgetList<ListTile>(
+              find.descendant(of: opds, matching: find.byType(ListTile)),
+            )
+            .where((tile) => (tile.title as Text?)?.data != feedAddress);
         expect(tiles, hasLength(9));
         for (final tile in tiles) {
           expect(tile.onTap != null, scenario.editable);

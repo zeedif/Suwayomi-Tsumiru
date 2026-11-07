@@ -1483,6 +1483,14 @@ List<SettingsSearchEntry> get serverOpdsSettingsSearchEntries => [
         _serverReachable(ref) && ref.watch(opdsSettingsProvider).value != null,
   ),
   SettingsSearchEntry(
+    id: 'opdsFeedAddress',
+    title: (l) => l.opdsFeedAddress,
+    breadcrumb: (l) => '${l.server} › ${l.opds}',
+    open: (c) => const ServerOpdsRoute(highlight: 'opdsFeedAddress').push(c),
+    visible: (ref, _) =>
+        _serverReachable(ref) && ref.watch(opdsSettingsProvider).value != null,
+  ),
+  SettingsSearchEntry(
     id: 'opdsItemsPerPage',
     title: (l) => l.opdsItemsPerPage,
     subtitle: (l) => l.opdsItemsPerPageDescription,

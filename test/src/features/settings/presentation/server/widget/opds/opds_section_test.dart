@@ -1,8 +1,12 @@
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gql/ast.dart';
 import 'package:graphql/client.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:tsumiru/src/constants/db_keys.dart';
+import 'package:tsumiru/src/constants/enum.dart';
 import 'package:tsumiru/src/features/account/data/account_providers.dart';
 import 'package:tsumiru/src/features/account/domain/account_access.dart';
 import 'package:tsumiru/src/features/settings/presentation/server/widget/opds/graphql/__generated__/opds.graphql.dart';
@@ -10,6 +14,7 @@ import 'package:tsumiru/src/features/settings/presentation/server/widget/opds/op
 import 'package:tsumiru/src/global_providers/global_providers.dart';
 import 'package:tsumiru/src/graphql/__generated__/schema.graphql.dart';
 import 'package:tsumiru/src/l10n/generated/app_localizations.dart';
+import 'package:tsumiru/src/utils/misc/toast/toast.dart';
 import 'package:tsumiru/src/widgets/compact_switch.dart';
 
 class _UndefinedOpdsLink extends Link {
@@ -37,6 +42,8 @@ class _UndefinedOpdsLink extends Link {
 }
 
 void main() {
+  _feedAddressTest();
+
   testWidgets('OPDS section is hidden when the server predates OPDS', (
     tester,
   ) async {
@@ -44,9 +51,12 @@ void main() {
       link: _UndefinedOpdsLink(),
       cache: GraphQLCache(),
     );
+    SharedPreferences.setMockInitialValues({});
+    final prefs = await SharedPreferences.getInstance();
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
+          sharedPreferencesProvider.overrideWithValue(prefs),
           graphQlClientProvider.overrideWithValue(client),
           settledAccountAccessProvider.overrideWithValue(
             AccountAccess(capability: AccountCapability.unsupported),
@@ -70,9 +80,12 @@ void main() {
   ) async {
     final link = _LegacyOpdsLink(_opdsState(binary: false));
     final client = GraphQLClient(link: link, cache: GraphQLCache());
+    SharedPreferences.setMockInitialValues({});
+    final prefs = await SharedPreferences.getInstance();
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
+          sharedPreferencesProvider.overrideWithValue(prefs),
           graphQlClientProvider.overrideWithValue(client),
           settledAccountAccessProvider.overrideWithValue(
             AccountAccess(capability: AccountCapability.unsupported),
@@ -111,6 +124,67 @@ void main() {
     expect(link.legacyQueries, greaterThan(queriesBefore));
     expect(tester.widget<CompactSwitchListTile>(binarySwitch).value, isTrue);
     expect(tester.takeException(), isNull);
+  });
+}
+
+void _feedAddressTest() {
+  testWidgets('copies the feed address under the server path', (tester) async {
+    SharedPreferences.setMockInitialValues({
+      DBKeys.serverUrl.name: 'https://nas.example/suwayomi',
+      DBKeys.serverPortToggle.name: false,
+      DBKeys.authType.name: AuthType.basic.index,
+    });
+    final prefs = await SharedPreferences.getInstance();
+    String? copied;
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (call) async {
+        if (call.method == 'Clipboard.setData') {
+          copied = (call.arguments as Map)['text'] as String;
+        }
+        return null;
+      },
+    );
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        null,
+      ),
+    );
+    final client = GraphQLClient(
+      link: _LegacyOpdsLink(_opdsState(binary: false)),
+      cache: GraphQLCache(),
+    );
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          sharedPreferencesProvider.overrideWithValue(prefs),
+          graphQlClientProvider.overrideWithValue(client),
+          settledAccountAccessProvider.overrideWithValue(
+            AccountAccess(capability: AccountCapability.unsupported),
+          ),
+          toastProvider.overrideWithValue(null),
+        ],
+        child: MaterialApp(
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
+          home: const Scaffold(
+            body: SingleChildScrollView(child: OpdsSection()),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    const url = 'https://nas.example/suwayomi/api/opds/v1.2';
+    expect(find.textContaining(url), findsOneWidget);
+    expect(
+      find.textContaining('server username and password'),
+      findsOneWidget,
+    );
+    await tester.tap(find.text('Feed address'));
+    await tester.pumpAndSettle();
+    expect(copied, url);
   });
 }
 

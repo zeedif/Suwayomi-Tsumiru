@@ -1,7 +1,12 @@
+import 'package:fluentui_system_icons/fluentui_system_icons.dart';
+import 'package:flutter/services.dart';
 import 'package:gap/gap.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
 
+import '../../../../../../constants/endpoints.dart';
+import '../../../../../../constants/enum.dart';
+import '../../../../../../global_providers/global_providers.dart';
 import '../../../../../../graphql/__generated__/schema.graphql.dart';
 import '../../../../../../utils/extensions/custom_extensions.dart';
 import '../../../../../../utils/misc/app_utils.dart';
@@ -17,7 +22,22 @@ import '../../../../../account/domain/account_access.dart';
 import '../../../../data/user_settings.dart';
 import '../../../../search/settings_search_registry.dart';
 import '../../../../widgets/settings_group_card/settings_group_card.dart';
+import '../client/server_port_tile/server_port_tile.dart';
+import '../client/server_url_tile/server_url_tile.dart';
 import 'data/opds_repository.dart';
+
+/// Feed root readers subscribe to; null when no server is configured.
+String? opdsFeedUrl(WidgetRef ref) {
+  final base = Endpoints.baseApi(
+    baseUrl: ref.watch(serverUrlProvider),
+    port: ref.watch(serverPortProvider),
+    addPort: ref.watch(serverPortToggleProvider).ifNull(),
+    appendApiToUrl: false,
+  );
+  if (base.isBlank) return null;
+  final root = base.endsWith('/') ? base.substring(0, base.length - 1) : base;
+  return '$root/api/opds/v1.2';
+}
 
 String _sortOrderLabel(BuildContext context, Enum$SortOrder value) =>
     switch (value) {
@@ -91,12 +111,40 @@ class OpdsSection extends ConsumerWidget {
       }
     }
 
+    final feedUrl = opdsFeedUrl(ref);
+    // OPDS readers cannot sign in to UI Login accounts; Basic auth with the
+    // server's credentials maps to the first account.
+    final feedSignIn = switch (ref.watch(authTypeKeyProvider)) {
+      AuthType.basic || AuthType.simpleLogin => context.l10n.opdsFeedSignIn,
+      AuthType.uiLogin => context.l10n.opdsFeedSignInMainAccount,
+      _ => null,
+    };
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const DesktopPageLeadingGap(16),
         SettingsGroupCard(
           children: [
+            if (feedUrl != null)
+              SettingsHighlightTarget(
+                id: 'opdsFeedAddress',
+                child: ListTile(
+                  title: Text(context.l10n.opdsFeedAddress),
+                  subtitle: Text(
+                    [feedUrl, ?feedSignIn].join('\n'),
+                  ),
+                  trailing: const Icon(FluentIcons.copy_24_regular),
+                  onTap: () async {
+                    await Clipboard.setData(ClipboardData(text: feedUrl));
+                    if (context.mounted) {
+                      ref
+                          .read(toastProvider)
+                          ?.show(context.l10n.copiedToClipboard);
+                    }
+                  },
+                ),
+              ),
             SettingsHighlightTarget(
               id: 'opdsItemsPerPage',
               // Keep this row separate from neighboring switches in the semantics tree.
