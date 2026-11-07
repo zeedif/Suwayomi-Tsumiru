@@ -653,7 +653,7 @@ class _GroupColumn extends ConsumerWidget {
               provider: categoryTabsProvider,
               onChanged: ref.read(categoryTabsProvider.notifier).update,
             )
-          else
+          else ...[
             _PanelCheckRow(
               title: context.l10n.sectionHeadersShowAllCategories,
               provider: sectionHeadersShowAllCategoriesProvider,
@@ -661,6 +661,12 @@ class _GroupColumn extends ConsumerWidget {
                   .read(sectionHeadersShowAllCategoriesProvider.notifier)
                   .update,
             ),
+            _PanelCheckRow(
+              title: context.l10n.pinSectionHeaders,
+              provider: pinSectionHeadersProvider,
+              onChanged: ref.read(pinSectionHeadersProvider.notifier).update,
+            ),
+          ],
           _PanelCheckRow(
             title: context.l10n.categoryNumberOfItems,
             provider: categoryNumberOfItemsProvider,

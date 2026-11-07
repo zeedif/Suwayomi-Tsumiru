@@ -500,7 +500,7 @@ enum LibraryBadge {
   };
 }
 
-/// Persisted by index; categoryTabs and sectionHeadersShowAllCategories modify the active style.
+/// Persisted by index; categoryTabs, sectionHeadersShowAllCategories and pinSectionHeaders modify the active style.
 enum LibraryGroupStyle {
   tabs,
 

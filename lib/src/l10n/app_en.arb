@@ -1501,6 +1501,10 @@
   "@sectionHeadersShowAllCategories": {
     "description": "Library Group checkbox to scroll all sections together in Section headers mode"
   },
+  "pinSectionHeaders": "Pin section headers",
+  "@pinSectionHeaders": {
+    "description": "Library Group checkbox in Section headers mode: keep each header on top while its section scrolls; off lets headers scroll away with their entries"
+  },
   "showHiddenCategories": "Show hidden categories",
   "@showHiddenCategories": {
     "description": "Library Display > Tabs: checkbox to include categories marked as hidden in the tab bar"

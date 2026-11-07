@@ -710,6 +710,13 @@ class SectionHeadersShowAllCategories extends _$SectionHeadersShowAllCategories
 }
 
 @riverpod
+class PinSectionHeaders extends _$PinSectionHeaders
+    with SharedPreferenceClientMixin<bool> {
+  @override
+  bool? build() => initialize(DBKeys.pinSectionHeaders);
+}
+
+@riverpod
 class ShowHiddenCategories extends _$ShowHiddenCategories
     with SharedPreferenceClientMixin<bool> {
   @override

@@ -524,9 +524,10 @@ class _DefaultLibraryToggledSearch extends HookConsumerWidget {
                   showCounts: showCounts,
                   tabViews: () => data.map((e) {
                     final id = e.id.getValueOnNullOrNegative();
-                    final content = CategoryMangaList(
+                    Widget content({Widget? header}) => CategoryMangaList(
                       key: ValueKey(id),
                       categoryId: id,
+                      header: header,
                     );
                     return showInlineHeaders
                         ? _PagedSection(
@@ -534,9 +535,9 @@ class _DefaultLibraryToggledSearch extends HookConsumerWidget {
                             section: (id: id, name: e.name),
                             byCategory: true,
                             showCount: showCounts,
-                            child: content,
+                            builder: content,
                           )
-                        : content;
+                        : content();
                   }).toList(),
                     ),
                   ),
@@ -777,9 +778,10 @@ class _DefaultLibraryStickySearch extends HookConsumerWidget {
                       showCounts: showCounts,
                       tabViews: () => data.map((e) {
                         final id = e.id.getValueOnNullOrNegative();
-                        final content = CategoryMangaList(
+                        Widget content({Widget? header}) => CategoryMangaList(
                           key: ValueKey(id),
                           categoryId: id,
+                          header: header,
                         );
                         return showInlineHeaders
                             ? _PagedSection(
@@ -787,9 +789,9 @@ class _DefaultLibraryStickySearch extends HookConsumerWidget {
                                 section: (id: id, name: e.name),
                                 byCategory: true,
                                 showCount: showCounts,
-                                child: content,
+                                builder: content,
                               )
-                            : content;
+                            : content();
                       }).toList(),
                     ),
                   ),
@@ -1041,9 +1043,10 @@ class _GroupedLibraryToggledSearch extends HookConsumerWidget {
                 byCategory: false,
                 showCounts: showCounts,
                 tabViews: () => tabs.map((t) {
-                  final content = _GroupedMangaList(
+                  Widget content({Widget? header}) => _GroupedMangaList(
                     key: ValueKey(t.id),
                     tabId: t.id,
+                    header: header,
                   );
                   return showInlineHeaders
                       ? _PagedSection(
@@ -1051,9 +1054,9 @@ class _GroupedLibraryToggledSearch extends HookConsumerWidget {
                           section: (id: t.id, name: t.name),
                           byCategory: false,
                           showCount: showCounts,
-                          child: content,
+                          builder: content,
                         )
-                      : content;
+                      : content();
                 }).toList(),
               ),
             ),
@@ -1285,9 +1288,10 @@ class _GroupedLibraryStickySearch extends HookConsumerWidget {
                       byCategory: false,
                       showCounts: showCounts,
                       tabViews: () => tabs.map((t) {
-                        final content = _GroupedMangaList(
+                        Widget content({Widget? header}) => _GroupedMangaList(
                           key: ValueKey(t.id),
                           tabId: t.id,
+                          header: header,
                         );
                         return showInlineHeaders
                             ? _PagedSection(
@@ -1295,9 +1299,9 @@ class _GroupedLibraryStickySearch extends HookConsumerWidget {
                                 section: (id: t.id, name: t.name),
                                 byCategory: false,
                                 showCount: showCounts,
-                                child: content,
+                                builder: content,
                               )
-                            : content;
+                            : content();
                       }).toList(),
                     ),
                   ),
@@ -1375,56 +1379,34 @@ class _PagedSection extends ConsumerWidget {
     required this.section,
     required this.byCategory,
     required this.showCount,
-    required this.child,
+    required this.builder,
   });
 
   final LibrarySection section;
   final bool byCategory;
   final bool showCount;
-  final Widget child;
+
+  /// Builds the page, scrolling [header] with its entries when given.
+  final Widget Function({Widget? header}) builder;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    var title = section.name;
-    if (showCount) {
-      final listAsync = byCategory
-          ? ref.watch(
-              categoryMangaListWithQueryAndFilterProvider(
-                categoryId: section.id,
-              ),
-            )
-          : ref.watch(
-              groupedMangaListWithQueryAndFilterProvider(tabId: section.id),
-            );
-      final count = listAsync.value?.length;
-      if (count != null) title = '$title ($count)';
-    }
-    return Column(
-      children: [
-        Container(
-          height: 40,
-          width: double.infinity,
-          color: context.theme.colorScheme.surface,
-          alignment: AlignmentDirectional.centerStart,
-          padding: const EdgeInsets.symmetric(horizontal: 8)
-              .onDesktopPageLine(context),
-          child: Text(
-            title,
-            overflow: TextOverflow.ellipsis,
-            style: context.theme.textTheme.titleSmall?.copyWith(
-              color: context.theme.colorScheme.primary,
-            ),
-          ),
-        ),
-        Expanded(child: child),
-      ],
+    final header = LibrarySectionHeader(
+      section: section,
+      byCategory: byCategory,
+      showCount: showCount,
     );
+    if (!ref.watch(pinSectionHeadersProvider).ifNull(true)) {
+      return builder(header: header);
+    }
+    return Column(children: [header, Expanded(child: builder())]);
   }
 }
 
 class _GroupedMangaList extends ConsumerWidget {
-  const _GroupedMangaList({super.key, required this.tabId});
+  const _GroupedMangaList({super.key, required this.tabId, this.header});
   final int tabId;
+  final Widget? header;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -1438,7 +1420,10 @@ class _GroupedMangaList extends ConsumerWidget {
       offlineEscapeHatch: true,
       (data) {
         if (data == null || data.isEmpty) {
-          return Emoticons(title: context.l10n.noCategoryMangaFound);
+          return withLibraryHeader(
+            header,
+            Emoticons(title: context.l10n.noCategoryMangaFound),
+          );
         }
         final items = data;
         return RefreshIndicator(
@@ -1458,6 +1443,7 @@ class _GroupedMangaList extends ConsumerWidget {
           },
           child: LibraryMangaGridView(
             items: items,
+            header: header,
             onOpen: (manga) => MangaRoute(mangaId: manga.id).push(context),
           ),
         );

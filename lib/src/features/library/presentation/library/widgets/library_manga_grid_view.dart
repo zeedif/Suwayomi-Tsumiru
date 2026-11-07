@@ -25,6 +25,16 @@ import '../../../../manga_book/presentation/manga_details/controller/manga_detai
 import '../../../../settings/presentation/appearance/widgets/grid_cover_width_slider/grid_cover_width_slider.dart';
 import '../controller/library_controller.dart';
 
+/// Places [header] above [child]; the empty states of paged sections use it.
+Widget withLibraryHeader(Widget? header, Widget child) => header == null
+    ? child
+    : Column(
+        children: [
+          header,
+          Expanded(child: child),
+        ],
+      );
+
 class LibraryMangaGridView extends StatelessWidget {
   const LibraryMangaGridView({
     super.key,
@@ -33,6 +43,7 @@ class LibraryMangaGridView extends StatelessWidget {
     this.onLongPress,
     this.selection = const {},
     this.linkLocationFor,
+    this.header,
   });
 
   final List<MangaDto> items;
@@ -43,9 +54,13 @@ class LibraryMangaGridView extends StatelessWidget {
 
   final String? Function(MangaDto manga)? linkLocationFor;
 
+  /// Scrolls away with the entries.
+  final Widget? header;
+
   @override
   Widget build(BuildContext context) => CustomScrollView(
     slivers: [
+      if (header != null) SliverToBoxAdapter(child: header),
       LibraryMangaSliver(
         items: items,
         onOpen: onOpen,

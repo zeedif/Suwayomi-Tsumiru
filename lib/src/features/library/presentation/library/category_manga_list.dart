@@ -70,8 +70,9 @@ List<int> serverDownloadIds(
 }
 
 class CategoryMangaList extends HookConsumerWidget {
-  const CategoryMangaList({super.key, required this.categoryId});
+  const CategoryMangaList({super.key, required this.categoryId, this.header});
   final int categoryId;
+  final Widget? header;
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final canDownload = ref
@@ -188,17 +189,21 @@ class CategoryMangaList extends HookConsumerWidget {
       context,
       (data) {
         if (data.isBlank) {
-          return Emoticons(
-            title: context.l10n.noCategoryMangaFound,
-            button: TextButton(
-              onPressed: refresh,
-              child: Text(context.l10n.refresh),
+          return withLibraryHeader(
+            header,
+            Emoticons(
+              title: context.l10n.noCategoryMangaFound,
+              button: TextButton(
+                onPressed: refresh,
+                child: Text(context.l10n.refresh),
+              ),
             ),
           );
         }
         final items = data!;
         final Widget grid = LibraryMangaGridView(
           items: items,
+          header: header,
           selection: selection.value,
           onOpen: open,
           onLongPress: (manga) => toggle(manga.id),
