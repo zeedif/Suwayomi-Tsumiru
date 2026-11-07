@@ -6,6 +6,7 @@
 
 import 'dart:async';
 
+import 'package:fluentui_system_icons/fluentui_system_icons.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
@@ -13,18 +14,32 @@ import 'package:material_ui/material_ui.dart';
 
 import '../../../../../routes/router_config.dart';
 import '../../../../../utils/extensions/custom_extensions.dart';
+import '../../../../../utils/misc/app_utils.dart';
+import '../../../../../utils/misc/toast/toast.dart';
 import '../../../../../widgets/desktop/desktop_page_frame.dart';
 import '../../../../../widgets/emoticons.dart';
 import '../../../../../widgets/shell/update_banner_state.dart';
 import '../../../../manga_book/data/updates/updates_repository.dart';
+import '../../../../manga_book/domain/manga/manga_model.dart';
 import '../../../../offline/data/server_reachability.dart';
 import '../controller/category_library_options.dart';
 import '../controller/library_controller.dart';
 import '../controller/library_grouping.dart';
 import '../controller/library_manga_list.dart';
+import '../controller/library_section_refresh.dart';
 import 'library_manga_grid_view.dart';
 
-typedef LibrarySection = ({int id, String name});
+typedef LibrarySection = ({int id, String key, String name});
+
+AsyncValue<List<MangaDto>?> watchLibrarySection(
+  WidgetRef ref,
+  LibrarySection section, {
+  required bool byCategory,
+}) => byCategory
+    ? ref.watch(
+        categoryMangaListWithQueryAndFilterProvider(categoryId: section.id),
+      )
+    : ref.watch(groupedMangaListWithQueryAndFilterProvider(tabId: section.id));
 
 /// Writes libraryVisibleSectionProvider from scroll position; never drives scrolling from it.
 class LibrarySectionsView extends HookConsumerWidget {
@@ -148,13 +163,7 @@ class _Section extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final listAsync = byCategory
-        ? ref.watch(
-            categoryMangaListWithQueryAndFilterProvider(categoryId: section.id),
-          )
-        : ref.watch(
-            groupedMangaListWithQueryAndFilterProvider(tabId: section.id),
-          );
+    final listAsync = watchLibrarySection(ref, section, byCategory: byCategory);
     final items = listAsync.value ?? const [];
     final showEmpty =
         byCategory &&
@@ -171,12 +180,9 @@ class _Section extends ConsumerWidget {
           pinned: true,
           delegate: _SectionHeaderDelegate(
             headerKey: headerKey,
-            title: showCount
-                ? '${section.name} (${items.length})'
-                : section.name,
-            // Opaque headers hide rows scrolling underneath.
-            background: context.theme.colorScheme.surface,
-            foreground: context.theme.colorScheme.primary,
+            section: section,
+            byCategory: byCategory,
+            showCount: showCount,
           ),
         ),
         if (items.isEmpty)
@@ -202,23 +208,21 @@ class _Section extends ConsumerWidget {
 class _SectionHeaderDelegate extends SliverPersistentHeaderDelegate {
   _SectionHeaderDelegate({
     required this.headerKey,
-    required this.title,
-    required this.background,
-    required this.foreground,
+    required this.section,
+    required this.byCategory,
+    required this.showCount,
   });
 
   final GlobalKey headerKey;
-  final String title;
-  final Color background;
-  final Color foreground;
-
-  static const _height = 40.0;
+  final LibrarySection section;
+  final bool byCategory;
+  final bool showCount;
 
   @override
-  double get minExtent => _height;
+  double get minExtent => LibrarySectionHeader.height;
 
   @override
-  double get maxExtent => _height;
+  double get maxExtent => LibrarySectionHeader.height;
 
   @override
   Widget build(
@@ -226,24 +230,118 @@ class _SectionHeaderDelegate extends SliverPersistentHeaderDelegate {
     double shrinkOffset,
     bool overlapsContent,
   ) {
-    return Container(
+    return LibrarySectionHeader(
       key: headerKey,
-      height: _height,
-      color: background,
-      alignment: AlignmentDirectional.centerStart,
-      padding: const EdgeInsets.symmetric(horizontal: 8)
-          .onDesktopPageLine(context),
-      child: Text(
-        title,
-        overflow: TextOverflow.ellipsis,
-        style: context.theme.textTheme.titleSmall?.copyWith(color: foreground),
-      ),
+      section: section,
+      byCategory: byCategory,
+      showCount: showCount,
     );
   }
 
   @override
   bool shouldRebuild(_SectionHeaderDelegate old) =>
-      old.title != title ||
-      old.background != background ||
-      old.foreground != foreground;
+      old.section != section ||
+      old.byCategory != byCategory ||
+      old.showCount != showCount;
+}
+
+/// Title row shared by the continuous and paged section layouts.
+class LibrarySectionHeader extends ConsumerWidget {
+  const LibrarySectionHeader({
+    super.key,
+    required this.section,
+    required this.byCategory,
+    required this.showCount,
+  });
+
+  static const height = 40.0;
+
+  final LibrarySection section;
+  final bool byCategory;
+  final bool showCount;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final count = showCount
+        ? watchLibrarySection(ref, section, byCategory: byCategory)
+              .value
+              ?.length
+        : null;
+    return Container(
+      height: height,
+      width: double.infinity,
+      // Opaque headers hide rows scrolling underneath.
+      color: context.theme.colorScheme.surface,
+      alignment: AlignmentDirectional.centerStart,
+      padding: const EdgeInsets.symmetric(horizontal: 8)
+          .onDesktopPageLine(context),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              count == null ? section.name : '${section.name} ($count)',
+              overflow: TextOverflow.ellipsis,
+              style: context.theme.textTheme.titleSmall?.copyWith(
+                color: context.theme.colorScheme.primary,
+              ),
+            ),
+          ),
+          _SectionRefreshButton(section: section, byCategory: byCategory),
+        ],
+      ),
+    );
+  }
+}
+
+class _SectionRefreshButton extends ConsumerWidget {
+  const _SectionRefreshButton({
+    required this.section,
+    required this.byCategory,
+  });
+
+  final LibrarySection section;
+  final bool byCategory;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final primary = context.theme.colorScheme.primary;
+    final refreshing = ref.watch(
+      librarySectionRefreshProvider.select(
+        (keys) => keys.contains(section.key),
+      ),
+    );
+    return SizedBox.square(
+      dimension: 36,
+      child: refreshing
+          ? Padding(
+              padding: const EdgeInsets.all(10),
+              child: CircularProgressIndicator(strokeWidth: 2, color: primary),
+            )
+          : IconButton(
+              tooltip: context.l10n.refresh,
+              padding: EdgeInsets.zero,
+              iconSize: 20,
+              color: primary,
+              icon: const Icon(FluentIcons.arrow_clockwise_24_regular),
+              onPressed: () async {
+                final toast = ref.read(toastProvider);
+                final failed = await AppUtils.guard(
+                  () => ref
+                      .read(librarySectionRefreshProvider.notifier)
+                      .refresh(
+                        id: section.id,
+                        key: section.key,
+                        byCategory: byCategory,
+                      ),
+                  toast,
+                );
+                if (failed != null && failed > 0 && context.mounted) {
+                  toast?.showError(
+                    context.l10n.notificationLibraryErrorBody(failed),
+                  );
+                }
+              },
+            ),
+    );
+  }
 }
